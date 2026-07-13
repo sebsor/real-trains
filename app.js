@@ -28,7 +28,7 @@ const SL_SITES_URL = 'https://transport.integration.sl.se/v1/sites?expand=true';
 const SL_STOP_POINTS_URL = 'https://transport.integration.sl.se/v1/stop-points';
 const SL_DEPARTURES_URL = (siteId) => `https://transport.integration.sl.se/v1/sites/${siteId}/departures`;
 const GTFS_RT_URL = (key) => `https://opendata.samtrafiken.se/gtfs-rt/sl/VehiclePositions.pb?key=${key}`;
-const GTFS_STATIC_URL = (key) => `https://opendata.samtrafiken.se/gtfs/sl/sl.zip?key=${key}`;
+const GTFS_STATIC_URL = (key) => `https://opendata.samtrafiken.se/gtfs/sl/sl.zip?key=${key}`; // uses staticApiKey, not apiKey
 const TRAIN_TRIPS_CACHE_KEY = 'sl_mode_trips_v2';
 const TRAIN_TRIPS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // static schedule data changes daily at most
 
@@ -100,7 +100,8 @@ message VehicleDescriptor {
 
 // ---- State ----
 let map;
-let apiKey = localStorage.getItem('trafiklab_api_key') || '';
+let apiKey = localStorage.getItem('trafiklab_api_key') || '';               // realtime (VehiclePositions)
+let staticApiKey = localStorage.getItem('trafiklab_static_api_key') || '';  // static GTFS (routes/trips)
 let trainTripMap = {};          // trip_id -> mode, from static GTFS
 let stationMarkers = new Map(); // siteId -> { marker, mode }
 let vehicleMarkers = new Map(); // vehicleId -> Leaflet marker
@@ -117,11 +118,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   loadStations();     // works with no API key
 
-  if (apiKey) {
-    loadTrainTripClassification().then(startVehiclePolling);
-  } else {
+  if (!apiKey || !staticApiKey) {
     document.getElementById('setup-overlay').removeAttribute('hidden');
+  }
+  if (apiKey) {
+    startVehiclePolling();
+  } else {
     setStatus('warn', 'Ingen API-nyckel');
+  }
+  if (staticApiKey) {
+    loadTrainTripClassification().then(() => {
+      if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
+    });
+  } else {
+    console.warn('[gtfs-static] no static-data key set — vehicles will show as "other" until one is added');
   }
 
   document.getElementById('debug-toggle').addEventListener('change', () => {
@@ -170,15 +180,28 @@ function setStatus(kind, text) {
 function wireSetupModal() {
   const overlay = document.getElementById('setup-overlay');
   const input = document.getElementById('setup-key-input');
+  const staticInput = document.getElementById('setup-static-key-input');
   input.value = apiKey;
+  staticInput.value = staticApiKey;
 
   document.getElementById('setup-save').addEventListener('click', () => {
     const val = input.value.trim();
-    if (!val) return;
-    apiKey = val;
-    localStorage.setItem('trafiklab_api_key', apiKey);
+    const staticVal = staticInput.value.trim();
+    if (!val && !staticVal) return;
+
+    if (val) {
+      apiKey = val;
+      localStorage.setItem('trafiklab_api_key', apiKey);
+      startVehiclePolling();
+    }
+    if (staticVal) {
+      staticApiKey = staticVal;
+      localStorage.setItem('trafiklab_static_api_key', staticApiKey);
+      loadTrainTripClassification().then(() => {
+        if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
+      });
+    }
     overlay.setAttribute('hidden', '');
-    loadTrainTripClassification().then(startVehiclePolling);
   });
 
   document.getElementById('setup-skip').addEventListener('click', () => {
@@ -489,7 +512,7 @@ async function loadTrainTripClassification() {
 
   console.log('[gtfs-static] downloading SL static GTFS feed (one-time, ~daily)…');
   try {
-    const res = await fetch(GTFS_STATIC_URL(apiKey));
+    const res = await fetch(GTFS_STATIC_URL(staticApiKey));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const zip = await JSZip.loadAsync(await res.arrayBuffer());
 

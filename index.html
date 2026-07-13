@@ -74,16 +74,18 @@
     <p id="setup-eyebrow">KONFIGURATION</p>
     <h2 id="setup-title">En Trafiklab-nyckel behövs</h2>
     <p class="setup-copy">
-      Livepositionerna för tågen hämtas via Trafiklabs GTFS-RT-flöde, som kräver en gratis API-nyckel.
-      Stationer och avgångar fungerar utan nyckel.
+      Livepositionerna för tågen hämtas via Trafiklabs GTFS-RT-flöde, och mode-klassificeringen
+      (vilken linje varje fordon kör) via det statiska GTFS-flödet. Trafiklab ger dessa <strong>två separata nycklar</strong>
+      även om du lägger till dem i samma projekt. Stationer och avgångar fungerar utan nyckel.
     </p>
     <ol class="setup-steps">
       <li>Gå till <a href="https://developer.trafiklab.se" target="_blank" rel="noopener">developer.trafiklab.se</a> och skapa ett konto.</li>
       <li>Skapa ett nytt projekt.</li>
-      <li>Lägg till API:et <strong>GTFS Regional</strong> i projektet.</li>
-      <li>Klistra in nyckeln nedan.</li>
+      <li>Lägg till <strong>GTFS Regional Realtime</strong> och <strong>GTFS Regional Static data</strong> i projektet — vardera ger en egen nyckel.</li>
+      <li>Klistra in båda nycklarna nedan.</li>
     </ol>
-    <input type="text" id="setup-key-input" placeholder="Din API-nyckel" autocomplete="off" spellcheck="false">
+    <input type="text" id="setup-key-input" placeholder="Realtime-nyckel (fordonspositioner)" autocomplete="off" spellcheck="false">
+    <input type="text" id="setup-static-key-input" placeholder="Static data-nyckel (linjeklassificering)" autocomplete="off" spellcheck="false" style="margin-top:8px;">
     <div class="setup-actions">
       <button id="setup-save" type="button" class="btn-primary">Spara och starta</button>
       <button id="setup-skip" type="button" class="btn-ghost">Fortsätt utan (bara stationer)</button>
