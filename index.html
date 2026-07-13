@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spårläge — Live tågkarta</title>
+<meta name="description" content="Realtidskarta över SL:s pendeltåg och Roslagsbanan">
+<meta name="theme-color" content="#0d1117">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+
+<link rel="stylesheet" href="https://unpkg.com/[email protected]/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="map"></div>
+
+<header id="titlebar">
+  <div id="titlebar-main">
+    <span id="logo-mark">◈</span>
+    <div>
+      <h1>Spårläge</h1>
+      <p id="subtitle">Pendeltåg &amp; Roslagsbanan, live</p>
+    </div>
+  </div>
+  <button id="status-pill" type="button" title="Anslutningsstatus — klicka för detaljer">
+    <span id="status-dot"></span>
+    <span id="status-text">Startar…</span>
+  </button>
+</header>
+
+<div id="legend">
+  <div class="legend-row"><span class="dot dot-pendeltag"></span> Pendeltåg</div>
+  <div class="legend-row"><span class="dot dot-roslagsbanan"></span> Roslagsbanan</div>
+  <div class="legend-row"><span class="dot dot-station"></span> Station</div>
+  <label class="legend-row legend-toggle">
+    <input type="checkbox" id="debug-toggle">
+    <span>Visa alla SL-fordon (debug)</span>
+  </label>
+</div>
+
+<!-- Departure board panel, slides in from the right when a station is clicked -->
+<aside id="board" aria-hidden="true">
+  <div id="board-header">
+    <div>
+      <p id="board-eyebrow">AVGÅNGAR</p>
+      <h2 id="board-station-name">—</h2>
+    </div>
+    <button id="board-close" type="button" aria-label="Stäng">✕</button>
+  </div>
+  <div id="board-body">
+    <p id="board-empty">Klicka på en station på kartan för att se avgångar.</p>
+    <table id="board-table" hidden>
+      <thead>
+        <tr><th>Linje</th><th>Mot</th><th>Avgår</th></tr>
+      </thead>
+      <tbody id="board-rows"></tbody>
+    </table>
+  </div>
+</aside>
+
+<!-- First-run API key setup modal -->
+<div id="setup-overlay" role="dialog" aria-modal="true" aria-labelledby="setup-title">
+  <div id="setup-card">
+    <p id="setup-eyebrow">KONFIGURATION</p>
+    <h2 id="setup-title">En Trafiklab-nyckel behövs</h2>
+    <p class="setup-copy">
+      Livepositionerna för tågen hämtas via Trafiklabs GTFS-RT-flöde, som kräver en gratis API-nyckel.
+      Stationer och avgångar fungerar utan nyckel.
+    </p>
+    <ol class="setup-steps">
+      <li>Gå till <a href="https://developer.trafiklab.se" target="_blank" rel="noopener">developer.trafiklab.se</a> och skapa ett konto.</li>
+      <li>Skapa ett nytt projekt.</li>
+      <li>Lägg till API:et <strong>GTFS Regional</strong> i projektet.</li>
+      <li>Klistra in nyckeln nedan.</li>
+    </ol>
+    <input type="text" id="setup-key-input" placeholder="Din API-nyckel" autocomplete="off" spellcheck="false">
+    <div class="setup-actions">
+      <button id="setup-save" type="button" class="btn-primary">Spara och starta</button>
+      <button id="setup-skip" type="button" class="btn-ghost">Fortsätt utan (bara stationer)</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/[email protected]/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/protobufjs@7.4.0/dist/protobuf.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
