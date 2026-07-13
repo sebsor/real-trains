@@ -22,6 +22,7 @@
    ========================================================================== */
 
 const SL_SITES_URL = 'https://transport.integration.sl.se/v1/sites?expand=true';
+const SL_STOP_POINTS_URL = 'https://transport.integration.sl.se/v1/stop-points';
 const SL_LINES_URL = 'https://transport.integration.sl.se/v1/lines?transport_authority_id=1';
 const SL_DEPARTURES_URL = (siteId) => `https://transport.integration.sl.se/v1/sites/${siteId}/departures`;
 const GTFS_RT_URL = (key) => `https://opendata.samtrafiken.se/gtfs-rt/sl/VehiclePositions.pb?key=${key}`;
@@ -154,6 +155,8 @@ function wireSetupModal() {
 // ==========================================================================
 async function loadStations() {
   try {
+    const trainSiteIds = await loadTrainSiteIds();
+
     const res = await fetch(SL_SITES_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const sites = await res.json();
@@ -161,14 +164,48 @@ async function loadStations() {
     window.DEBUG_LAST_SITES = sites; // inspect in console: window.DEBUG_LAST_SITES[0]
     console.log(`[stations] fetched ${sites.length} SL sites total`);
 
-    const trainSites = sites.filter(isTrainSite);
+    const trainSites = trainSiteIds
+      ? sites.filter(s => trainSiteIds.has(s.id) || trainSiteIds.has(s.gid))
+      : sites.filter(isTrainSite); // fallback if /stop-points failed entirely
+
     console.log(`[stations] ${trainSites.length} classified as train sites — ` +
-      `if this looks wrong (0 or way too many), inspect window.DEBUG_LAST_SITES ` +
-      `and adjust isTrainSite() in app.js`);
+      `if this looks wrong (0 or way too many), inspect window.DEBUG_LAST_STOP_POINTS ` +
+      `and window.DEBUG_LAST_SITES, and adjust loadTrainSiteIds()/isTrainSite() in app.js`);
 
     trainSites.forEach(addStationMarker);
   } catch (err) {
     console.error('[stations] failed to load', err);
+  }
+}
+
+// Builds a set of site ids (and gids) that have at least one train stop
+// point, using /v1/stop-points — this is where transport_mode actually
+// lives, unlike /v1/sites (see isTrainSite() fallback below, which is now
+// a backup only).
+async function loadTrainSiteIds() {
+  try {
+    const res = await fetch(SL_STOP_POINTS_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const stopPoints = await res.json();
+    window.DEBUG_LAST_STOP_POINTS = stopPoints; // inspect: window.DEBUG_LAST_STOP_POINTS[0]
+    console.log(`[stations] fetched ${stopPoints.length} SL stop points`);
+
+    const ids = new Set();
+    stopPoints
+      .filter(sp => (sp.transport_mode || sp.type || '').toString().toUpperCase().includes('TRAIN'))
+      .forEach(sp => {
+        // site reference shape is unconfirmed — collect every plausible id field
+        if (sp.site_id != null) ids.add(sp.site_id);
+        if (sp.site != null && sp.site.id != null) ids.add(sp.site.id);
+        if (sp.site != null && sp.site.gid != null) ids.add(sp.site.gid);
+        if (sp.gid != null) ids.add(sp.gid);
+      });
+
+    console.log(`[stations] ${ids.size} unique train site ids derived from stop points`);
+    return ids.size ? ids : null;
+  } catch (err) {
+    console.error('[stations] /stop-points failed, falling back to isTrainSite() guess on /sites', err);
+    return null;
   }
 }
 
