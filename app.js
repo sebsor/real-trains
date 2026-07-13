@@ -155,7 +155,7 @@ function wireSetupModal() {
 // ==========================================================================
 async function loadStations() {
   try {
-    const trainSiteIds = await loadTrainSiteIds();
+    const trainAreaIds = await loadTrainAreaIds();
 
     const res = await fetch(SL_SITES_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -164,13 +164,11 @@ async function loadStations() {
     window.DEBUG_LAST_SITES = sites; // inspect in console: window.DEBUG_LAST_SITES[0]
     console.log(`[stations] fetched ${sites.length} SL sites total`);
 
-    const trainSites = trainSiteIds
-      ? sites.filter(s => trainSiteIds.has(s.id) || trainSiteIds.has(s.gid))
+    const trainSites = trainAreaIds
+      ? sites.filter(s => Array.isArray(s.stop_areas) && s.stop_areas.some(areaId => trainAreaIds.has(areaId)))
       : sites.filter(isTrainSite); // fallback if /stop-points failed entirely
 
-    console.log(`[stations] ${trainSites.length} classified as train sites — ` +
-      `if this looks wrong (0 or way too many), inspect window.DEBUG_LAST_STOP_POINTS ` +
-      `and window.DEBUG_LAST_SITES, and adjust loadTrainSiteIds()/isTrainSite() in app.js`);
+    console.log(`[stations] ${trainSites.length} classified as train sites`);
 
     trainSites.forEach(addStationMarker);
   } catch (err) {
@@ -178,11 +176,11 @@ async function loadStations() {
   }
 }
 
-// Builds a set of site ids (and gids) that have at least one train stop
-// point, using /v1/stop-points — this is where transport_mode actually
-// lives, unlike /v1/sites (see isTrainSite() fallback below, which is now
-// a backup only).
-async function loadTrainSiteIds() {
+// stop_area.type is confirmed to include RAILWSTN (railway, i.e. Pendeltåg +
+// Roslagsbanan) distinct from METROSTN (tunnelbana) — this collects the
+// stop_area ids that are railway stations, which a site's own stop_areas
+// list can then be checked against.
+async function loadTrainAreaIds() {
   try {
     const res = await fetch(SL_STOP_POINTS_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -192,16 +190,10 @@ async function loadTrainSiteIds() {
 
     const ids = new Set();
     stopPoints
-      .filter(sp => (sp.transport_mode || sp.type || '').toString().toUpperCase().includes('TRAIN'))
-      .forEach(sp => {
-        // site reference shape is unconfirmed — collect every plausible id field
-        if (sp.site_id != null) ids.add(sp.site_id);
-        if (sp.site != null && sp.site.id != null) ids.add(sp.site.id);
-        if (sp.site != null && sp.site.gid != null) ids.add(sp.site.gid);
-        if (sp.gid != null) ids.add(sp.gid);
-      });
+      .filter(sp => sp.stop_area && sp.stop_area.type === 'RAILWSTN')
+      .forEach(sp => ids.add(sp.stop_area.id));
 
-    console.log(`[stations] ${ids.size} unique train site ids derived from stop points`);
+    console.log(`[stations] ${ids.size} unique railway stop_area ids derived from stop points`);
     return ids.size ? ids : null;
   } catch (err) {
     console.error('[stations] /stop-points failed, falling back to isTrainSite() guess on /sites', err);
