@@ -25,6 +25,9 @@ const SL_SITES_URL = 'https://transport.integration.sl.se/v1/sites?expand=true';
 const SL_LINES_URL = 'https://transport.integration.sl.se/v1/lines?transport_authority_id=1';
 const SL_DEPARTURES_URL = (siteId) => `https://transport.integration.sl.se/v1/sites/${siteId}/departures`;
 const GTFS_RT_URL = (key) => `https://opendata.samtrafiken.se/gtfs-rt/sl/VehiclePositions.pb?key=${key}`;
+const GTFS_STATIC_URL = (key) => `https://opendata.samtrafiken.se/gtfs/sl/sl.zip?key=${key}`;
+const TRAIN_TRIPS_CACHE_KEY = 'sl_train_trips_v1';
+const TRAIN_TRIPS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // static schedule data changes daily at most
 
 const VEHICLE_POLL_MS = 15000; // GTFS-RT vehicle positions update ~every 2s server-side, but poll politely
 const STOCKHOLM_CENTER = [59.334, 18.06];
@@ -73,7 +76,8 @@ message VehicleDescriptor {
 // ---- State ----
 let map;
 let apiKey = localStorage.getItem('trafiklab_api_key') || '';
-let trainLineIds = new Set();   // populated from /v1/lines, used by classifyVehicle()
+let trainLineIds = new Set();   // populated from /v1/lines, kept as a fallback signal only
+let trainTripMap = {};          // trip_id -> 'pendeltag' | 'roslagsbanan', from static GTFS
 let stationMarkers = new Map(); // siteId -> Leaflet marker
 let vehicleMarkers = new Map(); // vehicleId -> Leaflet marker
 let FeedMessageType = null;     // protobufjs decoded type, set once on init
@@ -91,7 +95,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadTrainLines();   // used to classify vehicles once positions come in
 
   if (apiKey) {
-    startVehiclePolling();
+    loadTrainTripClassification().then(startVehiclePolling);
   } else {
     document.getElementById('setup-overlay').removeAttribute('hidden');
     setStatus('warn', 'Ingen API-nyckel');
@@ -136,7 +140,7 @@ function wireSetupModal() {
     apiKey = val;
     localStorage.setItem('trafiklab_api_key', apiKey);
     overlay.setAttribute('hidden', '');
-    startVehiclePolling();
+    loadTrainTripClassification().then(startVehiclePolling);
   });
 
   document.getElementById('setup-skip').addEventListener('click', () => {
@@ -391,16 +395,109 @@ async function fetchVehiclePositions() {
   }
 }
 
-// Isolated on purpose — see the header comment. Adjust against
-// window.DEBUG_LAST_VEHICLES once you can see real route_id / label values.
+// ==========================================================================
+// Train trip classification (static GTFS: trip_id -> route -> mode)
+//
+// The real-time VehiclePositions feed almost never populates trip.routeId
+// or vehicle.label (confirmed live: 13 of 1065 vehicles had a routeId at
+// all). trip_id IS populated reliably, so the only solid way to know which
+// vehicles are Pendeltåg/Roslagsbanan is to join trip_id against the static
+// GTFS schedule, which does carry real route names.
+//
+// This downloads SL's full static GTFS zip (all modes — buses, metro, tram,
+// boats, trains), extracts just routes.txt + trips.txt, and keeps only the
+// trip_ids belonging to train routes. That's a heavier one-time fetch, so
+// it's cached in localStorage for 24h (static schedules don't change more
+// often than that).
+// ==========================================================================
+async function loadTrainTripClassification() {
+  const cached = readTrainTripCache();
+  if (cached) {
+    trainTripMap = cached;
+    console.log(`[gtfs-static] using cached classification (${Object.keys(trainTripMap).length} train trips)`);
+    return;
+  }
+
+  if (!window.JSZip || !window.Papa) {
+    console.error('[gtfs-static] JSZip/PapaParse missing — check CDN access');
+    return;
+  }
+
+  console.log('[gtfs-static] downloading SL static GTFS feed (one-time, ~daily)…');
+  try {
+    const res = await fetch(GTFS_STATIC_URL(apiKey));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const zip = await JSZip.loadAsync(await res.arrayBuffer());
+
+    const routesCsv = await zip.file('routes.txt').async('string');
+    const tripsCsv = await zip.file('trips.txt').async('string');
+
+    const routes = Papa.parse(routesCsv, { header: true, skipEmptyLines: true }).data;
+    const trips = Papa.parse(tripsCsv, { header: true, skipEmptyLines: true }).data;
+
+    const routeClassification = new Map(); // route_id -> 'pendeltag' | 'roslagsbanan'
+    routes.forEach(r => {
+      const kind = classifyRoute(r);
+      if (kind) routeClassification.set(r.route_id, kind);
+    });
+    console.log(`[gtfs-static] ${routeClassification.size} train routes found in routes.txt`);
+
+    const map = {};
+    trips.forEach(t => {
+      const kind = routeClassification.get(t.route_id);
+      if (kind) map[t.trip_id] = kind;
+    });
+    console.log(`[gtfs-static] ${Object.keys(map).length} train trips mapped`);
+
+    trainTripMap = map;
+    writeTrainTripCache(map);
+  } catch (err) {
+    console.error('[gtfs-static] failed to load/parse static GTFS — vehicles will show as "other"', err);
+  }
+}
+
+// Isolated for visibility/debugging: matches on route name text, since SL's
+// public route names reliably say "Pendeltåg" / "Roslagsbanan". If this
+// under- or over-matches, inspect a sample with:
+//   window.DEBUG_LAST_ROUTES = <paste routes array here during a breakpoint>
+function classifyRoute(route) {
+  const haystack = `${route.route_long_name || ''} ${route.route_short_name || ''} ${route.route_desc || ''}`.toLowerCase();
+  if (haystack.includes('roslagsban')) return 'roslagsbanan';
+  if (haystack.includes('pendeltåg') || haystack.includes('pendeltag')) return 'pendeltag';
+  return null;
+}
+
+function readTrainTripCache() {
+  try {
+    const raw = localStorage.getItem(TRAIN_TRIPS_CACHE_KEY);
+    if (!raw) return null;
+    const { fetchedAt, map } = JSON.parse(raw);
+    if (Date.now() - fetchedAt > TRAIN_TRIPS_CACHE_MAX_AGE_MS) return null;
+    return map;
+  } catch {
+    return null;
+  }
+}
+
+function writeTrainTripCache(map) {
+  try {
+    localStorage.setItem(TRAIN_TRIPS_CACHE_KEY, JSON.stringify({ fetchedAt: Date.now(), map }));
+  } catch (err) {
+    console.warn('[gtfs-static] could not cache classification (localStorage full?)', err);
+  }
+}
+
+// Used by renderVehicles(). trip_id lookup is the primary, reliable path;
+// route_id/label are kept as a fallback in case a future feed update
+// populates them more often than what we observed live.
 function classifyVehicle(v) {
+  const tripId = v.trip && v.trip.tripId;
+  if (tripId && trainTripMap[tripId]) return trainTripMap[tripId];
+
   const routeId = v.trip && v.trip.routeId;
   if (routeId && trainLineIds.has(String(routeId))) {
-    // Can't reliably distinguish Pendeltåg vs Roslagsbanan by route_id alone
-    // without a confirmed mapping — falls back to a label heuristic.
     const label = ((v.vehicle && v.vehicle.label) || '').toLowerCase();
-    if (label.includes('ros')) return 'roslagsbanan';
-    return 'pendeltag';
+    return label.includes('ros') ? 'roslagsbanan' : 'pendeltag';
   }
   return 'other';
 }
