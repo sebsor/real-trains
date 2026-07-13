@@ -20,6 +20,10 @@
   --amber:#ffb703;
   --pendeltag:#f4863a;
   --roslagsbanan:#2dd4bf;
+  --metro:#a78bfa;
+  --tram:#fb7185;
+  --bus:#60a5fa;
+  --boat:#22d3ee;
   --station:#64748b;
   --red:#ef4444;
   --green:#22c55e;
@@ -90,22 +94,32 @@ body{
   padding:12px 14px;font-size:12px;color:var(--muted);
   display:flex;flex-direction:column;gap:6px;
 }
-.legend-row{display:flex;align-items:center;gap:8px;}
+.legend-row{display:flex;align-items:center;gap:8px;cursor:pointer;}
+.legend-row input[type="checkbox"]{accent-color:var(--amber);margin:0;}
+.legend-hint{color:var(--muted);font-size:10px;}
 .dot{width:9px;height:9px;border-radius:50%;flex:none;}
 .dot-pendeltag{background:var(--pendeltag);}
 .dot-roslagsbanan{background:var(--roslagsbanan);}
+.dot-metro{background:var(--metro);}
+.dot-tram{background:var(--tram);}
+.dot-bus{background:var(--bus);}
+.dot-boat{background:var(--boat);}
 .dot-station{background:var(--station);border:1px solid #94a3b8;}
-.legend-toggle{margin-top:4px;padding-top:8px;border-top:1px solid var(--border);cursor:pointer;}
-.legend-toggle input{accent-color:var(--amber);}
+.legend-toggle{margin-top:4px;padding-top:8px;border-top:1px solid var(--border);}
 
 /* ---- Map markers ---- */
 .station-marker{
   width:11px;height:11px;border-radius:50%;
-  background:var(--station);border:2px solid #0d1117;
+  border:2px solid #0d1117;
   box-shadow:0 0 0 1px rgba(148,163,184,.5);
   cursor:pointer;
 }
-.station-marker:hover{background:#94a3b8;}
+.station-rail{background:var(--pendeltag);}
+.station-metro{background:var(--metro);}
+.station-tram{background:var(--tram);}
+.station-bus{background:var(--bus);}
+.station-boat{background:var(--boat);}
+.station-marker:hover{filter:brightness(1.2);}
 
 .train-marker-wrap{width:22px;height:22px;position:relative;}
 .train-marker-dot{
@@ -120,6 +134,14 @@ body{
 .train-pendeltag .train-marker-pulse{background:var(--pendeltag);}
 .train-roslagsbanan .train-marker-dot{background:var(--roslagsbanan);}
 .train-roslagsbanan .train-marker-pulse{background:var(--roslagsbanan);}
+.train-metro .train-marker-dot{background:var(--metro);}
+.train-metro .train-marker-pulse{background:var(--metro);}
+.train-tram .train-marker-dot{background:var(--tram);}
+.train-tram .train-marker-pulse{background:var(--tram);}
+.train-bus .train-marker-dot{background:var(--bus);}
+.train-bus .train-marker-pulse{background:var(--bus);}
+.train-boat .train-marker-dot{background:var(--boat);}
+.train-boat .train-marker-pulse{background:var(--boat);}
 .train-other .train-marker-dot{background:var(--muted);}
 .train-other .train-marker-pulse{background:var(--muted);}
 @keyframes train-pulse{

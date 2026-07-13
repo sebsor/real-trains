@@ -36,12 +36,15 @@
 </header>
 
 <div id="legend">
-  <div class="legend-row"><span class="dot dot-pendeltag"></span> Pendeltåg</div>
-  <div class="legend-row"><span class="dot dot-roslagsbanan"></span> Roslagsbanan</div>
-  <div class="legend-row"><span class="dot dot-station"></span> Station</div>
+  <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="pendeltag" checked><span class="dot dot-pendeltag"></span> Pendeltåg</label>
+  <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="roslagsbanan" checked><span class="dot dot-roslagsbanan"></span> Roslagsbanan</label>
+  <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="metro" checked><span class="dot dot-metro"></span> Tunnelbana</label>
+  <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="tram" checked><span class="dot dot-tram"></span> Spårvagn</label>
+  <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="boat" checked><span class="dot dot-boat"></span> Båt</label>
+  <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="bus" checked><span class="dot dot-bus"></span> Buss <span class="legend-hint">(nära zoom)</span></label>
   <label class="legend-row legend-toggle">
     <input type="checkbox" id="debug-toggle">
-    <span>Visa alla SL-fordon (debug)</span>
+    <span>Visa oklassade fordon (debug)</span>
   </label>
 </div>
 

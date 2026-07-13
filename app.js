@@ -1,37 +1,61 @@
 /* ==========================================================================
-   Spårläge — live SL train map (Pendeltåg + Roslagsbanan)
+   Spårläge — live SL traffic map (rail, metro, tram, bus, boat)
 
    Data sources:
    - Stations + departures: SL Transport API (transport.integration.sl.se)
      JSON, no key required.
    - Live vehicle GPS: Trafiklab GTFS-RT VehiclePositions feed (protobuf),
-     requires a Trafiklab API key (stored in localStorage, client-side —
-     fine for a personal hobby project, not meant for public distribution
-     since the key is visible in the browser's network tab).
+     requires a Trafiklab API key with both "GTFS Regional Realtime" and
+     "GTFS Regional Static data" added to the project (stored client-side
+     in localStorage — fine for a personal hobby project, not meant for
+     public distribution since the key is visible in the network tab).
 
-   Known unknowns, flagged rather than silently assumed:
-   1. Whether opendata.samtrafiken.se sends CORS headers for browser fetch.
-      If it doesn't, VEHICLES_STATUS will show "error" and the console will
-      log the exact failure — see fetchVehiclePositions().
-   2. The exact filter to isolate Pendeltåg + Roslagsbanan out of SL's full
-      vehicle feed (which also carries metro/bus/tram/boat). See
-      classifyVehicle() — it's isolated on purpose so it's easy to tune
-      once you can see real data in the console (window.DEBUG_LAST_VEHICLES).
-   3. The exact shape of /v1/sites response for filtering to rail stations
-      only. See isTrainSite() — same debug approach.
+   How mode classification actually works (confirmed live, not guessed):
+   - Stations: /v1/stop-points gives each stop_area a `type` — RAILWSTN,
+     METROSTN, TRAMSTN, BUSTERM, SHIPBER/FERRYBER — which maps directly to
+     a mode. Rail does NOT distinguish Pendeltåg from Roslagsbanan at the
+     station level; that split isn't available without a site->line join
+     SL's API doesn't expose, so rail stations show one merged color.
+   - Vehicles: the real-time feed almost never populates trip.routeId or
+     vehicle.label (confirmed: 13 of 1065 vehicles had a routeId at all).
+     The only reliable path is joining each vehicle's trip_id against
+     SL's static GTFS schedule (routes.txt + trips.txt), which DOES carry
+     real route names — this lets Pendeltåg/Roslagsbanan be split
+     correctly at the vehicle level, unlike stations.
    ========================================================================== */
 
 const SL_SITES_URL = 'https://transport.integration.sl.se/v1/sites?expand=true';
 const SL_STOP_POINTS_URL = 'https://transport.integration.sl.se/v1/stop-points';
-const SL_LINES_URL = 'https://transport.integration.sl.se/v1/lines?transport_authority_id=1';
 const SL_DEPARTURES_URL = (siteId) => `https://transport.integration.sl.se/v1/sites/${siteId}/departures`;
 const GTFS_RT_URL = (key) => `https://opendata.samtrafiken.se/gtfs-rt/sl/VehiclePositions.pb?key=${key}`;
 const GTFS_STATIC_URL = (key) => `https://opendata.samtrafiken.se/gtfs/sl/sl.zip?key=${key}`;
-const TRAIN_TRIPS_CACHE_KEY = 'sl_train_trips_v1';
+const TRAIN_TRIPS_CACHE_KEY = 'sl_mode_trips_v2';
 const TRAIN_TRIPS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // static schedule data changes daily at most
 
 const VEHICLE_POLL_MS = 15000; // GTFS-RT vehicle positions update ~every 2s server-side, but poll politely
 const STOCKHOLM_CENTER = [59.334, 18.06];
+const BUS_STATION_MIN_ZOOM = 14; // SL has ~10k+ bus stops — only render up close, or the map is unreadable
+
+// Confirmed live from window.DEBUG_LAST_STOP_POINTS: stop_area.type takes
+// exactly these 6 values across the whole SL network.
+const STOP_AREA_TYPE_TO_MODE = {
+  RAILWSTN: 'rail',   // Pendeltåg + Roslagsbanan share this at station level —
+                       // splitting them requires route data we don't have per-site
+  METROSTN: 'metro',
+  TRAMSTN: 'tram',
+  BUSTERM: 'bus',
+  SHIPBER: 'boat',
+  FERRYBER: 'boat',
+};
+// When a site serves multiple modes (interchange), show the most significant one.
+const MODE_PRIORITY = ['rail', 'metro', 'tram', 'boat', 'bus'];
+
+// Vehicle-level modes: pendeltåg/roslagsbanan ARE split here, since we can
+// join trip_id -> route name via static GTFS. metro/tram/bus/boat are
+// bucketed by GTFS extended route_type (see classifyRoute()).
+const VEHICLE_MODES = ['pendeltag', 'roslagsbanan', 'metro', 'tram', 'bus', 'boat'];
+
+let activeModes = new Set(VEHICLE_MODES); // controls both vehicle + station visibility
 
 // ---- Minimal GTFS-Realtime schema (subset needed for VehiclePositions) ----
 // Transcribed field-for-field from the official spec so the wire format
@@ -77,9 +101,8 @@ message VehicleDescriptor {
 // ---- State ----
 let map;
 let apiKey = localStorage.getItem('trafiklab_api_key') || '';
-let trainLineIds = new Set();   // populated from /v1/lines, kept as a fallback signal only
-let trainTripMap = {};          // trip_id -> 'pendeltag' | 'roslagsbanan', from static GTFS
-let stationMarkers = new Map(); // siteId -> Leaflet marker
+let trainTripMap = {};          // trip_id -> mode, from static GTFS
+let stationMarkers = new Map(); // siteId -> { marker, mode }
 let vehicleMarkers = new Map(); // vehicleId -> Leaflet marker
 let FeedMessageType = null;     // protobufjs decoded type, set once on init
 let vehiclePollTimer = null;
@@ -93,7 +116,6 @@ document.addEventListener('DOMContentLoaded', () => {
   wireBoard();
 
   loadStations();     // works with no API key
-  loadTrainLines();   // used to classify vehicles once positions come in
 
   if (apiKey) {
     loadTrainTripClassification().then(startVehiclePolling);
@@ -107,8 +129,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
   });
 
+  map.on('zoomend', refreshAllStationVisibility);
+  wireModeCheckboxes();
+
   registerServiceWorker();
 });
+
+function wireModeCheckboxes() {
+  document.querySelectorAll('.mode-checkbox').forEach(input => {
+    input.addEventListener('change', () => {
+      const mode = input.dataset.mode;
+      if (input.checked) activeModes.add(mode);
+      else activeModes.delete(mode);
+      refreshAllStationVisibility();
+      if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
+    });
+  });
+}
 
 function initMap() {
   map = L.map('map', { zoomControl: true, attributionControl: true })
@@ -155,7 +192,7 @@ function wireSetupModal() {
 // ==========================================================================
 async function loadStations() {
   try {
-    const trainAreaIds = await loadTrainAreaIds();
+    const areaIdToMode = await loadAreaModeMap();
 
     const res = await fetch(SL_SITES_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -164,23 +201,31 @@ async function loadStations() {
     window.DEBUG_LAST_SITES = sites; // inspect in console: window.DEBUG_LAST_SITES[0]
     console.log(`[stations] fetched ${sites.length} SL sites total`);
 
-    const trainSites = trainAreaIds
-      ? sites.filter(s => Array.isArray(s.stop_areas) && s.stop_areas.some(areaId => trainAreaIds.has(areaId)))
-      : sites.filter(isTrainSite); // fallback if /stop-points failed entirely
-
-    console.log(`[stations] ${trainSites.length} classified as train sites`);
-
-    trainSites.forEach(addStationMarker);
+    let placed = 0;
+    sites.forEach(site => {
+      const mode = areaIdToMode ? resolveSiteMode(site, areaIdToMode) : (isTrainSite(site) ? 'rail' : null);
+      if (!mode) return;
+      addStationMarker(site, mode);
+      placed++;
+    });
+    console.log(`[stations] placed ${placed} station markers across all modes`);
   } catch (err) {
     console.error('[stations] failed to load', err);
   }
 }
 
-// stop_area.type is confirmed to include RAILWSTN (railway, i.e. Pendeltåg +
-// Roslagsbanan) distinct from METROSTN (tunnelbana) — this collects the
-// stop_area ids that are railway stations, which a site's own stop_areas
-// list can then be checked against.
-async function loadTrainAreaIds() {
+// A site can serve multiple modes (e.g. T-Centralen: rail + metro). Pick
+// the highest-priority mode present so the marker reflects the more
+// significant service there.
+function resolveSiteMode(site, areaIdToMode) {
+  if (!Array.isArray(site.stop_areas)) return null;
+  const modesHere = new Set(site.stop_areas.map(id => areaIdToMode.get(id)).filter(Boolean));
+  return MODE_PRIORITY.find(m => modesHere.has(m)) || null;
+}
+
+// stop_area.type is confirmed (via window.DEBUG_LAST_STOP_POINTS) to take
+// exactly 6 values covering every mode — see STOP_AREA_TYPE_TO_MODE.
+async function loadAreaModeMap() {
   try {
     const res = await fetch(SL_STOP_POINTS_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -188,13 +233,15 @@ async function loadTrainAreaIds() {
     window.DEBUG_LAST_STOP_POINTS = stopPoints; // inspect: window.DEBUG_LAST_STOP_POINTS[0]
     console.log(`[stations] fetched ${stopPoints.length} SL stop points`);
 
-    const ids = new Set();
-    stopPoints
-      .filter(sp => sp.stop_area && sp.stop_area.type === 'RAILWSTN')
-      .forEach(sp => ids.add(sp.stop_area.id));
+    const map = new Map();
+    stopPoints.forEach(sp => {
+      if (!sp.stop_area) return;
+      const mode = STOP_AREA_TYPE_TO_MODE[sp.stop_area.type];
+      if (mode) map.set(sp.stop_area.id, mode);
+    });
 
-    console.log(`[stations] ${ids.size} unique railway stop_area ids derived from stop points`);
-    return ids.size ? ids : null;
+    console.log(`[stations] ${map.size} stop_area ids mapped to a mode`);
+    return map.size ? map : null;
   } catch (err) {
     console.error('[stations] /stop-points failed, falling back to isTrainSite() guess on /sites', err);
     return null;
@@ -227,19 +274,40 @@ function getSiteLatLng(site) {
   return null;
 }
 
-function addStationMarker(site) {
+function addStationMarker(site, mode) {
   const latlng = getSiteLatLng(site);
   if (!latlng) {
     console.warn('[stations] no coordinates found for site, skipping', site);
     return;
   }
-  const icon = L.divIcon({ className: 'station-marker', iconSize: [11, 11] });
+  const icon = L.divIcon({ className: `station-marker station-${mode}`, iconSize: [11, 11] });
   const marker = L.marker(latlng, { icon, keyboard: false })
-    .addTo(map)
     .bindTooltip(site.name || 'Station', { direction: 'top', offset: [0, -6] });
 
   marker.on('click', () => openBoard(site));
-  stationMarkers.set(site.id, marker);
+  stationMarkers.set(site.id, { marker, mode });
+  updateStationMarkerVisibility(marker, mode);
+}
+
+// Rail/metro/tram/boat stations follow the legend checkboxes only. Bus
+// stops additionally require zoom >= BUS_STATION_MIN_ZOOM — SL has
+// thousands of them, so showing them at city-wide zoom would drown
+// everything else out.
+function updateStationMarkerVisibility(marker, mode) {
+  const modeEnabled = mode === 'rail'
+    ? (activeModes.has('pendeltag') || activeModes.has('roslagsbanan'))
+    : activeModes.has(mode);
+  const zoomOk = mode !== 'bus' || map.getZoom() >= BUS_STATION_MIN_ZOOM;
+  const shouldShow = modeEnabled && zoomOk;
+  const isShown = map.hasLayer(marker);
+  if (shouldShow && !isShown) marker.addTo(map);
+  if (!shouldShow && isShown) map.removeLayer(marker);
+}
+
+function refreshAllStationVisibility() {
+  for (const { marker, mode } of stationMarkers.values()) {
+    updateStationMarkerVisibility(marker, mode);
+  }
 }
 
 // ==========================================================================
@@ -278,8 +346,7 @@ async function loadDepartures(site) {
     const data = await res.json();
     window.DEBUG_LAST_DEPARTURES = data;
 
-    // Departures are grouped by transport mode; keep only train-like groups.
-    const departures = extractTrainDepartures(data);
+    const departures = extractDepartures(data);
 
     if (!departures.length) {
       empty.textContent = 'Inga kommande avgångar hittades för den här stationen just nu.';
@@ -299,27 +366,22 @@ async function loadDepartures(site) {
   }
 }
 
-// Isolated for the same reason as isTrainSite() — adjust against
-// window.DEBUG_LAST_DEPARTURES if the shape differs from what's assumed here.
-function extractTrainDepartures(data) {
-  // Most likely shape, per SL's documented departures endpoint: an object
-  // with a "departures" array, each item carrying a "line" with transport_mode.
-  const list = Array.isArray(data) ? data : (data.departures || data.train || []);
+// Isolated for the same reason as other schema-guess functions — adjust
+// against window.DEBUG_LAST_DEPARTURES if the shape differs from what's
+// assumed here. No longer mode-filtered: since every station type is
+// clickable now, show whatever departs from that specific site.
+function extractDepartures(data) {
+  const list = Array.isArray(data) ? data : (data.departures || []);
   if (!Array.isArray(list)) {
     console.warn('[departures] unexpected response shape', data);
     return [];
   }
-  return list
-    .filter(dep => {
-      const mode = (dep.line && dep.line.transport_mode) || dep.transport_mode || '';
-      return mode.toString().toUpperCase().includes('TRAIN') || list === data.train;
-    })
-    .map(dep => ({
-      line: (dep.line && (dep.line.designation || dep.line.name)) || dep.designation || '?',
-      destination: dep.destination || (dep.direction) || '',
-      time: dep.expected || (dep.departure && dep.departure.time) || dep.scheduled,
-      deviation: !!(dep.deviations && dep.deviations.length),
-    }));
+  return list.map(dep => ({
+    line: (dep.line && (dep.line.designation || dep.line.name)) || dep.designation || '?',
+    destination: dep.destination || (dep.direction) || '',
+    time: dep.expected || (dep.departure && dep.departure.time) || dep.scheduled,
+    deviation: !!(dep.deviations && dep.deviations.length),
+  }));
 }
 
 function renderDepartureRow(dep) {
@@ -347,33 +409,6 @@ function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[c]));
-}
-
-// ==========================================================================
-// Train line lookup (used to classify vehicles by mode)
-// ==========================================================================
-async function loadTrainLines() {
-  try {
-    const res = await fetch(SL_LINES_URL);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    window.DEBUG_LAST_LINES = data;
-
-    // Response groups lines by mode (see SL Transport API docs example).
-    // Train-like groups may appear under different keys depending on the
-    // live schema — collect anything whose entries say TRAIN.
-    const allLines = Array.isArray(data) ? data.flatMap(obj => Object.values(obj).flat()) : [];
-    allLines
-      .filter(l => (l.transport_mode || '').toUpperCase().includes('TRAIN'))
-      .forEach(l => {
-        if (l.id != null) trainLineIds.add(String(l.id));
-        if (l.gid != null) trainLineIds.add(String(l.gid));
-      });
-
-    console.log(`[lines] identified ${trainLineIds.size} train line ids for vehicle filtering`);
-  } catch (err) {
-    console.error('[lines] failed to load, vehicle classification will fall back to heuristics', err);
-  }
 }
 
 // ==========================================================================
@@ -485,15 +520,29 @@ async function loadTrainTripClassification() {
   }
 }
 
-// Isolated for visibility/debugging: matches on route name text, since SL's
-// public route names reliably say "Pendeltåg" / "Roslagsbanan". If this
-// under- or over-matches, inspect a sample with:
-//   window.DEBUG_LAST_ROUTES = <paste routes array here during a breakpoint>
+// Isolated for visibility/debugging. Pendeltåg/Roslagsbanan are matched by
+// name text (SL's public route names reliably say so). Everything else is
+// bucketed by GTFS extended route_type: values are either the basic 0-12
+// GTFS types, or an "extended" type where the hundreds digit gives the
+// category (100=rail, 400=metro, 700=bus, 900=tram, 1000=water) per the
+// Google Transit extended route types spec. If this misclassifies
+// something, inspect window.DEBUG_LAST_ROUTES (set manually via a
+// breakpoint in loadTrainTripClassification) and adjust here.
 function classifyRoute(route) {
   const haystack = `${route.route_long_name || ''} ${route.route_short_name || ''} ${route.route_desc || ''}`.toLowerCase();
   if (haystack.includes('roslagsban')) return 'roslagsbanan';
   if (haystack.includes('pendeltåg') || haystack.includes('pendeltag')) return 'pendeltag';
-  return null;
+
+  const rt = parseInt(route.route_type, 10);
+  if (Number.isNaN(rt)) return null;
+  const bucket = rt < 100 ? rt : Math.floor(rt / 100) * 100;
+  switch (bucket) {
+    case 0: case 900: return 'tram';
+    case 1: case 400: return 'metro';
+    case 3: case 700: return 'bus';
+    case 4: case 1000: return 'boat';
+    default: return null; // includes unmatched rail (100/2) — rare, stays "other"
+  }
 }
 
 function readTrainTripCache() {
@@ -516,29 +565,26 @@ function writeTrainTripCache(map) {
   }
 }
 
-// Used by renderVehicles(). trip_id lookup is the primary, reliable path;
-// route_id/label are kept as a fallback in case a future feed update
-// populates them more often than what we observed live.
+// trip_id -> mode, joined against the static GTFS classification built in
+// loadTrainTripClassification(). This is the only reliable path — see the
+// header comment on why route_id/label aren't usable.
 function classifyVehicle(v) {
   const tripId = v.trip && v.trip.tripId;
-  if (tripId && trainTripMap[tripId]) return trainTripMap[tripId];
-
-  const routeId = v.trip && v.trip.routeId;
-  if (routeId && trainLineIds.has(String(routeId))) {
-    const label = ((v.vehicle && v.vehicle.label) || '').toLowerCase();
-    return label.includes('ros') ? 'roslagsbanan' : 'pendeltag';
-  }
-  return 'other';
+  return (tripId && trainTripMap[tripId]) || 'other';
 }
 
 function renderVehicles(vehicles) {
-  const showAll = document.getElementById('debug-toggle').checked;
+  const showUnclassified = document.getElementById('debug-toggle').checked;
   const seen = new Set();
 
   vehicles.forEach(v => {
     if (!v.position) return;
     const kind = classifyVehicle(v);
-    if (!showAll && kind === 'other') return;
+    if (kind === 'other') {
+      if (!showUnclassified) return;
+    } else if (!activeModes.has(kind)) {
+      return;
+    }
 
     const id = (v.vehicle && v.vehicle.id) || (v.trip && v.trip.tripId) || `${v.position.latitude},${v.position.longitude}`;
     seen.add(id);
