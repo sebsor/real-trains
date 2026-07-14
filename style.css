@@ -510,6 +510,23 @@ body{
   color:var(--muted);font-size:11px;font-style:italic;
 }
 
+.trip-detail-tabs{display:flex;gap:6px;margin-bottom:14px;}
+.trip-tab{
+  background:var(--panel);border:1px solid var(--border);color:var(--muted);
+  padding:6px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;
+  font-family:'Space Grotesk',system-ui,sans-serif;
+}
+.trip-tab.active{background:var(--amber);color:#1a1300;border-color:var(--amber);}
+.trip-tab-pane[hidden]{display:none;}
+.trip-map-container{
+  width:100%;height:240px;border-radius:8px;overflow:hidden;
+  border:1px solid var(--border);background:var(--panel);
+}
+.trip-map-empty{
+  padding:20px;text-align:center;color:var(--muted);font-size:12px;
+  font-family:'JetBrains Mono',monospace;
+}
+
 @media (max-width:640px){
   #journey-panel{width:100%;}
 }

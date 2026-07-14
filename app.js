@@ -1361,14 +1361,53 @@ function renderTripCard(trip) {
   });
   card.appendChild(legsRow);
 
-  // Tap to expand into a full stop-by-stop itinerary, similar to SL's own
-  // app — departure/arrival stop names and times per leg, platform/track
-  // when ResRobot provides one, walking distance for walk legs.
+  // Tap to expand into full trip detail — a "Resedetaljer" tab (stop-by-stop
+  // itinerary, like SL's own app) and a "Karta" tab (route drawn on a small
+  // map, colored per mode, created lazily only when actually opened).
   const detail = document.createElement('div');
   detail.className = 'trip-detail';
   detail.hidden = true;
-  detail.appendChild(renderTripDetail(legs));
+  detail.addEventListener('click', (e) => e.stopPropagation()); // don't let interacting with tabs/map collapse the card
+
+  const tabs = document.createElement('div');
+  tabs.className = 'trip-detail-tabs';
+  tabs.innerHTML = `
+    <button type="button" class="trip-tab active" data-tab="itinerary">Resedetaljer</button>
+    <button type="button" class="trip-tab" data-tab="map">Karta</button>
+  `;
+  detail.appendChild(tabs);
+
+  const itineraryPane = document.createElement('div');
+  itineraryPane.className = 'trip-tab-pane';
+  itineraryPane.appendChild(renderTripDetail(legs));
+  detail.appendChild(itineraryPane);
+
+  const mapPane = document.createElement('div');
+  mapPane.className = 'trip-tab-pane';
+  mapPane.hidden = true;
+  const mapContainer = document.createElement('div');
+  mapContainer.className = 'trip-map-container';
+  mapPane.appendChild(mapContainer);
+  detail.appendChild(mapPane);
+
   card.appendChild(detail);
+
+  let tripMap = null;
+  tabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('.trip-tab');
+    if (!btn) return;
+    const showMap = btn.dataset.tab === 'map';
+    tabs.querySelectorAll('.trip-tab').forEach(b => b.classList.toggle('active', b === btn));
+    itineraryPane.hidden = showMap;
+    mapPane.hidden = !showMap;
+    if (showMap) {
+      if (!tripMap) {
+        tripMap = renderTripMap(mapContainer, legs);
+      } else {
+        setTimeout(() => tripMap.invalidateSize(), 30); // container was display:none during creation, size cache needs refreshing
+      }
+    }
+  });
 
   card.addEventListener('click', () => {
     const wasOpen = !detail.hidden;
@@ -1475,6 +1514,65 @@ function renderWalkLeg(leg) {
     </div>
   `;
   return wrap;
+}
+
+// Draws the trip's route on a small standalone Leaflet map (separate
+// instance from the main app map) — a straight-line connector per leg
+// between its stop coordinates, colored to match the mode palette used
+// everywhere else. Not the actual rail/road geometry (ResRobot's basic
+// trip response doesn't include a shape/polyline, only stop coordinates),
+// so curves in the real line won't show — flagged here rather than
+// silently presented as more precise than it is.
+function renderTripMap(container, legs) {
+  const map = L.map(container, { zoomControl: true, attributionControl: false })
+    .setView(STOCKHOLM_CENTER, 12);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap &copy; CARTO',
+    subdomains: 'abcd',
+    maxZoom: 19,
+  }).addTo(map);
+
+  const bounds = [];
+  let missingCoords = false;
+
+  legs.forEach(leg => {
+    const o = leg.Origin, d = leg.Destination;
+    if (!o || !d || o.lat == null || o.lon == null || d.lat == null || d.lon == null) {
+      missingCoords = true;
+      return;
+    }
+    const originLatLng = [o.lat, o.lon];
+    const destLatLng = [d.lat, d.lon];
+
+    const isWalk = leg.type === 'WALK' || leg.type === 'TRSF';
+    const catCode = leg.Product && leg.Product[0] && leg.Product[0].catCode;
+    const mode = isWalk ? null : (CAT_CODE_TO_MODE[catCode] || 'pendeltag');
+    const color = mode
+      ? getComputedStyle(document.documentElement).getPropertyValue(`--${mode}`).trim()
+      : '#7d8590';
+
+    L.polyline([originLatLng, destLatLng], {
+      color, weight: isWalk ? 3 : 5, opacity: 0.9,
+      dashArray: isWalk ? '4,7' : null,
+    }).addTo(map);
+
+    [originLatLng, destLatLng].forEach(ll => {
+      L.circleMarker(ll, { radius: 5, color: '#0d1117', weight: 2, fillColor: color, fillOpacity: 1 }).addTo(map);
+      bounds.push(ll);
+    });
+  });
+
+  if (bounds.length) {
+    map.fitBounds(bounds, { padding: [24, 24] });
+  }
+  if (missingCoords) {
+    console.warn('[journey] one or more legs had no coordinates from ResRobot — route line may be incomplete. Inspect window.DEBUG_LAST_TRIPS.');
+  }
+  if (!bounds.length) {
+    container.innerHTML = '<p class="trip-map-empty">Ingen kartdata tillgänglig för den här resan.</p>';
+  }
+
+  return map;
 }
 
 function renderTransferRow(waitMin) {
