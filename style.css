@@ -428,13 +428,17 @@ body{
 .journey-status-msg{color:var(--muted);font-size:13px;}
 .trip-card{
   border:1px solid var(--border);border-radius:10px;padding:14px;background:var(--panel-2);
+  cursor:pointer;
 }
+.trip-card:hover{border-color:var(--muted);}
 .trip-summary{
   display:flex;align-items:baseline;justify-content:space-between;gap:8px;
   font-family:'JetBrains Mono',monospace;margin-bottom:10px;
 }
 .trip-times{font-size:15px;font-weight:600;color:var(--text);}
-.trip-duration{font-size:12px;color:var(--amber);}
+.trip-duration{font-size:12px;color:var(--amber);flex:1;}
+.trip-expand-arrow{color:var(--muted);font-size:10px;transition:transform .15s ease;}
+.trip-card.expanded .trip-expand-arrow{transform:rotate(180deg);}
 .trip-legs{display:flex;flex-wrap:wrap;align-items:center;gap:4px;}
 .trip-leg{
   display:flex;align-items:center;gap:5px;font-size:12px;
@@ -443,6 +447,23 @@ body{
 .trip-leg-dot{width:8px;height:8px;border-radius:50%;flex:none;}
 .trip-leg-walk{color:var(--muted);font-style:italic;}
 .trip-leg-arrow{color:var(--muted);font-size:11px;}
+
+.trip-detail{
+  margin-top:14px;padding-top:14px;border-top:1px solid var(--border);
+  display:flex;flex-direction:column;gap:10px;
+  font-family:'JetBrains Mono',monospace;font-size:12px;
+}
+.trip-detail-leg{padding-left:4px;}
+.trip-detail-stop{display:flex;align-items:center;gap:8px;}
+.trip-detail-time{color:var(--amber);font-weight:600;min-width:38px;}
+.trip-detail-dot{width:8px;height:8px;border-radius:50%;flex:none;}
+.trip-detail-name{color:var(--text);}
+.trip-detail-line{
+  margin:4px 0 4px 46px;color:var(--muted);
+  font-family:'Space Grotesk',system-ui,sans-serif;font-size:12px;
+}
+.trip-detail-line span{font-weight:600;color:var(--text);}
+.trip-detail-walk{color:var(--muted);font-style:italic;padding:2px 0 2px 46px;}
 
 @media (max-width:640px){
   #journey-panel{width:100%;}

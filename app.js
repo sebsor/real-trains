@@ -141,7 +141,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Shown once, up front, only if at least one key hasn't been set yet —
   // not re-prompted every time a flow is entered.
-  if (!apiKey || !staticApiKey || !resrobotApiKey) {
+  // Only prompt if literally no keys are saved yet — not if just one of
+  // the three is missing, which would otherwise keep reappearing for
+  // anyone who's saved some but not all of them.
+  if (!apiKey && !staticApiKey && !resrobotApiKey) {
     document.getElementById('setup-overlay').removeAttribute('hidden');
   }
 });
@@ -1299,6 +1302,7 @@ function renderTripCard(trip) {
   summary.innerHTML = `
     <span class="trip-times">${formatClock(depTime)} → ${formatClock(arrTime)}</span>
     <span class="trip-duration">${durationLabel}</span>
+    <span class="trip-expand-arrow">▾</span>
   `;
   card.appendChild(summary);
 
@@ -1315,7 +1319,56 @@ function renderTripCard(trip) {
   });
   card.appendChild(legsRow);
 
+  // Tap to expand into a full stop-by-stop itinerary, similar to SL's own
+  // app — departure/arrival stop names and times per leg, platform/track
+  // when ResRobot provides one, walking distance for walk legs.
+  const detail = document.createElement('div');
+  detail.className = 'trip-detail';
+  detail.hidden = true;
+  legs.forEach(leg => detail.appendChild(renderLegDetail(leg)));
+  card.appendChild(detail);
+
+  card.addEventListener('click', () => {
+    detail.hidden = !detail.hidden;
+    card.classList.toggle('expanded', !detail.hidden);
+  });
+
   return card;
+}
+
+function renderLegDetail(leg) {
+  const row = document.createElement('div');
+  row.className = 'trip-detail-leg';
+
+  if (leg.type === 'WALK' || leg.type === 'TRSF') {
+    row.innerHTML = `
+      <div class="trip-detail-walk">
+        🚶 Gå ${leg.dist ? `${leg.dist} m` : ''} ${leg.duration ? `(${formatIsoDuration(leg.duration)})` : ''}
+      </div>
+    `;
+    return row;
+  }
+
+  const catCode = leg.Product && leg.Product[0] && leg.Product[0].catCode;
+  const mode = CAT_CODE_TO_MODE[catCode] || 'pendeltag';
+  const lineLabel = (leg.Product && leg.Product[0] && (leg.Product[0].displayNumber || leg.Product[0].line)) || leg.name || '?';
+  const originTrack = leg.Origin && (leg.Origin.track || leg.Origin.rtTrack);
+  const destTrack = leg.Destination && (leg.Destination.track || leg.Destination.rtTrack);
+
+  row.innerHTML = `
+    <div class="trip-detail-stop">
+      <span class="trip-detail-time">${formatClock(leg.Origin && leg.Origin.time)}</span>
+      <span class="trip-detail-dot dot-${mode}"></span>
+      <span class="trip-detail-name">${escapeHtml((leg.Origin && leg.Origin.name) || '')}${originTrack ? ` · läge ${escapeHtml(originTrack)}` : ''}</span>
+    </div>
+    <div class="trip-detail-line"><span class="dot-${mode}">${escapeHtml(lineLabel)}</span> mot ${escapeHtml((leg.Destination && leg.Destination.name) || '')}</div>
+    <div class="trip-detail-stop">
+      <span class="trip-detail-time">${formatClock(leg.Destination && leg.Destination.time)}</span>
+      <span class="trip-detail-dot dot-${mode}"></span>
+      <span class="trip-detail-name">${escapeHtml((leg.Destination && leg.Destination.name) || '')}${destTrack ? ` · läge ${escapeHtml(destTrack)}` : ''}</span>
+    </div>
+  `;
+  return row;
 }
 
 function renderLegChip(leg) {
