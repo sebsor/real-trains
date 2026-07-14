@@ -182,33 +182,21 @@ body{
 .station-boat{background:var(--boat);color:var(--boat);}
 .station-marker:hover{filter:brightness(1.3);transform:scale(1.15);}
 
-.train-marker-wrap{width:22px;height:22px;position:relative;}
-.train-marker-dot{
-  position:absolute;top:3px;left:3px;width:16px;height:16px;
-  clip-path:polygon(50% 0%, 20% 100%, 50% 78%, 80% 100%);
-  filter:drop-shadow(0 0 1px #0d1117) drop-shadow(0 0 1px #0d1117);
-  transform-origin:center center;
-  z-index:2;
+/* TEMPORARY DIAGNOSTIC: matches .station-marker structure exactly (no
+   child elements, no nested transform) to test whether that was the
+   actual cause of the persistent vehicle drift. */
+.train-marker-wrap{
+  width:16px;height:16px;border-radius:50%;
+  border:2px solid #0d1117;
+  box-shadow:0 0 0 2px currentColor, 0 0 0 3px rgba(0,0,0,.4);
 }
-.train-marker-pulse{
-  position:absolute;inset:0;border-radius:50%;
-  opacity:.35;
-  z-index:1;
-}
-.train-pendeltag .train-marker-dot{background:var(--pendeltag);}
-.train-pendeltag .train-marker-pulse{background:var(--pendeltag);}
-.train-roslagsbanan .train-marker-dot{background:var(--roslagsbanan);}
-.train-roslagsbanan .train-marker-pulse{background:var(--roslagsbanan);}
-.train-metro .train-marker-dot{background:var(--metro);}
-.train-metro .train-marker-pulse{background:var(--metro);}
-.train-tram .train-marker-dot{background:var(--tram);}
-.train-tram .train-marker-pulse{background:var(--tram);}
-.train-bus .train-marker-dot{background:var(--bus);}
-.train-bus .train-marker-pulse{background:var(--bus);}
-.train-boat .train-marker-dot{background:var(--boat);}
-.train-boat .train-marker-pulse{background:var(--boat);}
-.train-other .train-marker-dot{background:var(--muted);}
-.train-other .train-marker-pulse{background:var(--muted);}
+.train-pendeltag{background:var(--pendeltag);color:var(--pendeltag);}
+.train-roslagsbanan{background:var(--roslagsbanan);color:var(--roslagsbanan);}
+.train-metro{background:var(--metro);color:var(--metro);}
+.train-tram{background:var(--tram);color:var(--tram);}
+.train-bus{background:var(--bus);color:var(--bus);}
+.train-boat{background:var(--boat);color:var(--boat);}
+.train-other{background:var(--muted);color:var(--muted);}
 
 .leaflet-popup-content-wrapper{
   background:var(--panel);color:var(--text);border:1px solid var(--border);
@@ -385,7 +373,7 @@ body{
 @media (max-width:640px){
   #journey-panel{width:100%;}
 }
-  #status-dot.live,.train-marker-pulse{animation:none;}
+  #status-dot.live{animation:none;}
 }
 
 @media (max-width:640px){

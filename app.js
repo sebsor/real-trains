@@ -918,11 +918,15 @@ function renderVehicles(vehicles) {
     const existing = vehicleMarkers.get(id);
     if (existing) map.removeLayer(existing);
 
+    // TEMPORARY DIAGNOSTIC: stripped down to exactly match station markers'
+    // structure (plain className-only divIcon, no html/child content, no
+    // child transform) to test whether that nested transform was the
+    // actual cause of the persistent drift — arrows/pulse ring removed
+    // for this test only.
     const icon = L.divIcon({
       className: `train-marker-wrap train-${kind}`,
-      html: `<div class="train-marker-pulse"></div><div class="train-marker-dot" style="transform:rotate(${bearing}deg)"></div>`,
-      iconSize: [22, 22],
-      iconAnchor: [11, 11],
+      iconSize: [16, 16],
+      iconAnchor: [8, 8],
     });
     const marker = L.marker(latlng, { icon, keyboard: false }).addTo(map);
     vehicleMarkers.set(id, marker);
@@ -931,7 +935,7 @@ function renderVehicles(vehicles) {
     const speedKmh = v.position.speed != null ? Math.round(v.position.speed * 3.6) : null;
     marker.bindPopup(`
       <p class="popup-title">${escapeHtml(label)}</p>
-      <p class="popup-meta">${kind === 'other' ? 'Okänd linjetyp' : kind}${speedKmh != null ? ` · ${speedKmh} km/h` : ''}</p>
+      <p class="popup-meta">${kind === 'other' ? 'Okänd linjetyp' : kind}${speedKmh != null ? ` · ${speedKmh} km/h` : ''}${bearing != null ? ` · bäring ${bearing}°` : ''}</p>
     `);
   });
 
