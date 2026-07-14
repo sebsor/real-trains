@@ -918,13 +918,16 @@ function renderVehicles(vehicles) {
     const existing = vehicleMarkers.get(id);
     if (existing) map.removeLayer(existing);
 
-    // TEMPORARY DIAGNOSTIC: stripped down to exactly match station markers'
-    // structure (plain className-only divIcon, no html/child content, no
-    // child transform) to test whether that nested transform was the
-    // actual cause of the persistent drift — arrows/pulse ring removed
-    // for this test only.
+    // Fixed: confirmed live that a nested child element with its own
+    // inline style="transform:rotate()" was the actual cause of the
+    // persistent drift bug (removing it fixed positioning outright).
+    // Direction is reintroduced here WITHOUT that pattern — bucketed into
+    // 16 compass-direction classes (22.5° each) applied directly via
+    // className on the icon itself, the same mechanism proven safe for
+    // station markers, instead of an inline transform on a child.
+    const dirBucket = Math.round(bearing / 22.5) % 16;
     const icon = L.divIcon({
-      className: `train-marker-wrap train-${kind}`,
+      className: `train-marker-wrap train-${kind} dir-${dirBucket}`,
       iconSize: [16, 16],
       iconAnchor: [8, 8],
     });

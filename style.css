@@ -182,14 +182,22 @@ body{
 .station-boat{background:var(--boat);color:var(--boat);}
 .station-marker:hover{filter:brightness(1.3);transform:scale(1.15);}
 
-/* TEMPORARY DIAGNOSTIC: matches .station-marker structure exactly (no
-   child elements, no nested transform) to test whether that was the
-   actual cause of the persistent vehicle drift. */
+/* Fixed: a nested child with its own inline transform:rotate() was the
+   confirmed cause of the drift bug. Direction is applied here via the
+   standalone CSS `rotate` property (independent from `transform`, so it
+   can't conflict with Leaflet's own inline transform:translate3d() used
+   for positioning on this same element) and bucketed into 16 classes
+   rather than an arbitrary inline value. */
 .train-marker-wrap{
-  width:16px;height:16px;border-radius:50%;
-  border:2px solid #0d1117;
-  box-shadow:0 0 0 2px currentColor, 0 0 0 3px rgba(0,0,0,.4);
+  width:16px;height:16px;
+  clip-path:polygon(50% 0%, 20% 100%, 50% 78%, 80% 100%);
+  filter:drop-shadow(0 0 1px #0d1117) drop-shadow(0 0 1px #0d1117);
 }
+.dir-0{rotate:0deg;} .dir-1{rotate:22.5deg;} .dir-2{rotate:45deg;} .dir-3{rotate:67.5deg;}
+.dir-4{rotate:90deg;} .dir-5{rotate:112.5deg;} .dir-6{rotate:135deg;} .dir-7{rotate:157.5deg;}
+.dir-8{rotate:180deg;} .dir-9{rotate:202.5deg;} .dir-10{rotate:225deg;} .dir-11{rotate:247.5deg;}
+.dir-12{rotate:270deg;} .dir-13{rotate:292.5deg;} .dir-14{rotate:315deg;} .dir-15{rotate:337.5deg;}
+
 .train-pendeltag{background:var(--pendeltag);color:var(--pendeltag);}
 .train-roslagsbanan{background:var(--roslagsbanan);color:var(--roslagsbanan);}
 .train-metro{background:var(--metro);color:var(--metro);}
