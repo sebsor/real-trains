@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 
@@ -42,9 +42,11 @@
 
 <!-- Loading overlay, shown only while the map path initializes -->
 <div id="loading-overlay" hidden>
-  <div id="loading-track">
-    <div id="loading-fill"></div>
-    <span id="loading-train">🚈</span>
+  <div id="loading-track-wrap">
+    <div id="loading-track">
+      <div id="loading-fill"></div>
+      <span id="loading-train">🚈</span>
+    </div>
   </div>
   <p id="loading-text">Startar…</p>
 </div>
@@ -60,6 +62,7 @@
     </div>
   </div>
   <div id="titlebar-actions">
+    <button id="station-search-toggle" type="button" title="Sök station">🔍</button>
     <button id="journey-toggle" type="button">Res A→B</button>
     <button id="status-pill" type="button" title="Anslutningsstatus — klicka för detaljer">
       <span id="status-dot"></span>
@@ -67,6 +70,12 @@
     </button>
   </div>
 </header>
+
+<!-- Station search, opens from the titlebar magnifier -->
+<div id="station-search-panel" hidden>
+  <input type="text" id="station-search-input" placeholder="Sök station…" autocomplete="off">
+  <ul id="station-search-results"></ul>
+</div>
 
 <div id="legend" hidden>
   <label class="legend-row legend-master"><input type="checkbox" id="vehicles-toggle" checked><span>Visa fordon (rörliga)</span></label>
@@ -168,6 +177,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/protobufjs/8.0.2/protobuf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.5.4/papaparse.min.js"></script>
-<script src="app.js?v=16"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>

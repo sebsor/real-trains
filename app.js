@@ -192,6 +192,7 @@ async function startMapMode() {
 
   map.on('zoomend', refreshAllStationVisibility);
   wireModeCheckboxes();
+  wireStationSearch();
 
   await loadStations(); // loading overlay stays up until the initial station markers are placed
   setLoadingProgress(100, 'Klart!');
@@ -205,8 +206,9 @@ function setLoadingProgress(percent, text) {
   const fill = document.getElementById('loading-fill');
   const train = document.getElementById('loading-train');
   const label = document.getElementById('loading-text');
+  const clampedForTrain = Math.min(96, Math.max(4, percent));
   if (fill) fill.style.width = `${percent}%`;
-  if (train) train.style.left = `${percent}%`;
+  if (train) train.style.left = `${clampedForTrain}%`;
   if (label && text) label.textContent = text;
 }
 
@@ -229,6 +231,62 @@ function startJourneyMode() {
   if (!resrobotApiKey) {
     document.getElementById('setup-overlay').removeAttribute('hidden');
   }
+}
+
+function wireStationSearch() {
+  const toggle = document.getElementById('station-search-toggle');
+  const panel = document.getElementById('station-search-panel');
+  const input = document.getElementById('station-search-input');
+  const results = document.getElementById('station-search-results');
+
+  toggle.addEventListener('click', () => {
+    const opening = panel.hasAttribute('hidden');
+    if (opening) {
+      panel.removeAttribute('hidden');
+      toggle.classList.add('active');
+      input.value = '';
+      results.innerHTML = '';
+      input.focus();
+    } else {
+      panel.setAttribute('hidden', '');
+      toggle.classList.remove('active');
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!panel.hasAttribute('hidden') && !panel.contains(e.target) && e.target !== toggle) {
+      panel.setAttribute('hidden', '');
+      toggle.classList.remove('active');
+    }
+  });
+
+  input.addEventListener('input', () => {
+    const query = input.value.trim().toLowerCase();
+    results.innerHTML = '';
+    if (query.length < 1) return;
+
+    const matches = [...stationMarkers.values()]
+      .filter(({ site }) => (site.name || '').toLowerCase().includes(query))
+      .slice(0, 15);
+
+    if (!matches.length) {
+      results.innerHTML = '<li id="station-search-empty">Inga stationer hittades</li>';
+      return;
+    }
+
+    matches.forEach(({ site, mode }) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="dot dot-${mode}"></span><span>${escapeHtml(site.name || 'Station')}</span>`;
+      li.addEventListener('click', () => {
+        const latlng = getSiteLatLng(site);
+        if (latlng) map.setView(latlng, 15);
+        openBoard(site);
+        panel.setAttribute('hidden', '');
+        toggle.classList.remove('active');
+      });
+      results.appendChild(li);
+    });
+  });
 }
 
 function wireModeCheckboxes() {
@@ -538,6 +596,15 @@ function openBoard(site) {
   board.classList.add('open');
   board.setAttribute('aria-hidden', 'false');
   loadDepartures(site);
+
+  // Avoid both slide-in panels being open at once — on narrow screens this
+  // was causing horizontal overflow/scroll rather than a clean overlay.
+  const journeyPanel = document.getElementById('journey-panel');
+  if (journeyPanel && !journeyPanel.classList.contains('standalone')) {
+    journeyPanel.classList.remove('open');
+    journeyPanel.setAttribute('aria-hidden', 'true');
+    document.getElementById('journey-toggle').classList.remove('active');
+  }
 }
 
 function closeBoard() {
@@ -595,19 +662,48 @@ function extractDepartures(data) {
     line: (dep.line && (dep.line.designation || dep.line.name)) || dep.designation || '?',
     destination: dep.destination || (dep.direction) || '',
     time: dep.expected || (dep.departure && dep.departure.time) || dep.scheduled,
-    deviation: !!(dep.deviations && dep.deviations.length),
+    scheduledTime: dep.scheduled || (dep.departure && dep.departure.scheduled) || null,
+    platform: (dep.stop_point && (dep.stop_point.designation || dep.stop_point.name)) || dep.platform || null,
+    deviationTexts: Array.isArray(dep.deviations)
+      ? dep.deviations.map(d => d.text || d.consequence || d.header).filter(Boolean)
+      : [],
+    get deviation() { return this.deviationTexts.length > 0; },
   }));
 }
 
 function renderDepartureRow(dep) {
   const tr = document.createElement('tr');
+  tr.className = 'dep-row';
   const timeLabel = formatDepartureTime(dep.time);
   tr.innerHTML = `
     <td><span class="dep-line">${escapeHtml(dep.line)}</span></td>
     <td>${escapeHtml(dep.destination)}</td>
     <td class="dep-time ${dep.deviation ? 'deviation' : ''}">${timeLabel}</td>
   `;
-  return tr;
+
+  const detailTr = document.createElement('tr');
+  detailTr.className = 'dep-detail-row';
+  detailTr.hidden = true;
+  const detailParts = [];
+  if (dep.platform) detailParts.push(`<div>Läge/plattform: <strong>${escapeHtml(dep.platform)}</strong></div>`);
+  if (dep.scheduledTime && dep.scheduledTime !== dep.time) {
+    detailParts.push(`<div>Tidtabell: ${formatDepartureTime(dep.scheduledTime)} (realtid: ${timeLabel})</div>`);
+  }
+  if (dep.deviationTexts.length) {
+    detailParts.push(...dep.deviationTexts.map(t => `<div class="dep-deviation-text">⚠ ${escapeHtml(t)}</div>`));
+  }
+  if (!detailParts.length) detailParts.push('<div class="dep-detail-empty">Inga fler detaljer</div>');
+  detailTr.innerHTML = `<td colspan="3"><div class="dep-detail">${detailParts.join('')}</div></td>`;
+
+  tr.addEventListener('click', () => {
+    detailTr.hidden = !detailTr.hidden;
+    tr.classList.toggle('expanded', !detailTr.hidden);
+  });
+
+  const frag = document.createDocumentFragment();
+  frag.appendChild(tr);
+  frag.appendChild(detailTr);
+  return frag;
 }
 
 function formatDepartureTime(iso) {
@@ -994,6 +1090,7 @@ function wireJourneyPanel() {
     panel.classList.toggle('open', opening);
     panel.setAttribute('aria-hidden', String(!opening));
     toggle.classList.toggle('active', opening);
+    if (opening) closeBoard();
   });
   closeBtn.addEventListener('click', () => {
     panel.classList.remove('open');
