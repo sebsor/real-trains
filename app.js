@@ -71,7 +71,7 @@ const MODE_PRIORITY = ['pendeltag', 'roslagsbanan', 'metro', 'tram', 'boat', 'bu
 const VEHICLE_MODES = ['pendeltag', 'roslagsbanan', 'metro', 'tram', 'bus', 'boat'];
 
 let activeModes = new Set(VEHICLE_MODES); // controls both vehicle + station visibility
-let vehiclesVisible = true; // master toggle, independent of per-mode filters
+let vehiclesVisible = false; // master toggle, independent of per-mode filters — off by default to save API quota until opted in
 
 // ---- Minimal GTFS-Realtime schema (subset needed for VehiclePositions) ----
 // Transcribed field-for-field from the official spec so the wire format
@@ -169,10 +169,12 @@ async function startMapMode() {
   cleanupStaleLocalStorageKeys();
   setLoadingProgress(10, 'Förbereder…');
 
-  if (apiKey) {
+  if (apiKey && vehiclesVisible) {
     startVehiclePolling();
-  } else {
+  } else if (!apiKey) {
     setStatus('warn', 'Ingen API-nyckel');
+  } else {
+    setStatus('', 'Fordon avstängda');
   }
   if (staticApiKey) {
     loadTrainTripClassification().then(() => {
@@ -185,7 +187,12 @@ async function startMapMode() {
   document.getElementById('vehicles-toggle').addEventListener('change', (e) => {
     vehiclesVisible = e.target.checked;
     saveLegendPrefs();
-    if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
+    if (vehiclesVisible) {
+      if (apiKey) startVehiclePolling(); // resumes fetching, not just rendering
+    } else {
+      stopVehiclePolling(); // actually stops fetching — this is what saves quota
+      renderVehicles([]); // clear any markers already on the map immediately
+    }
   });
 
   document.getElementById('debug-toggle').addEventListener('change', () => {
@@ -318,7 +325,7 @@ function loadLegendPrefs() {
     console.warn('[legend] could not read saved preferences, using defaults', err);
   }
   activeModes = new Set(['roslagsbanan']);
-  vehiclesVisible = true;
+  vehiclesVisible = false;
 }
 
 function saveLegendPrefs() {
@@ -730,12 +737,24 @@ function startVehiclePolling() {
     setStatus('error', 'protobufjs saknas');
     return;
   }
-  const root = protobuf.parse(GTFS_RT_PROTO).root;
-  FeedMessageType = root.lookupType('transit_realtime.FeedMessage');
+  if (!FeedMessageType) {
+    const root = protobuf.parse(GTFS_RT_PROTO).root;
+    FeedMessageType = root.lookupType('transit_realtime.FeedMessage');
+  }
 
   fetchVehiclePositions();
   if (vehiclePollTimer) clearInterval(vehiclePollTimer);
   vehiclePollTimer = setInterval(fetchVehiclePositions, VEHICLE_POLL_MS);
+}
+
+// Actually halts the fetch timer — quota only gets saved by not polling at
+// all, not just by hiding already-fetched markers.
+function stopVehiclePolling() {
+  if (vehiclePollTimer) {
+    clearInterval(vehiclePollTimer);
+    vehiclePollTimer = null;
+  }
+  setStatus('', 'Fordon pausade');
 }
 
 async function fetchVehiclePositions() {
