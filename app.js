@@ -245,6 +245,30 @@ function initMap() {
   // but represents more real-world distance the further you zoom out.
   // Forcing a recalculation after load (and on resize) fixes this class
   // of bug outright.
+  // Confirmed live (via console): Leaflet's own per-marker position sync
+  // doesn't reliably keep up with zoom changes in this app — markers were
+  // found sitting at stale screen positions from a previous zoom level,
+  // while map.latLngToContainerPoint() correctly reported where they
+  // SHOULD be. Forcing a hard view reset on every zoomend fixes it
+  // instantly and exactly (verified against multiple markers). This uses
+  // Leaflet's private _resetView because it's the one thing empirically
+  // confirmed to fix the exact observed bug; if a future Leaflet version
+  // removes/renames it, this silently becomes a no-op rather than erroring.
+  // Guarded against re-entrancy because _resetView itself fires
+  // moveend/zoomend, which would otherwise call this handler again.
+  let resettingView = false;
+  map.on('zoomend moveend', () => {
+    if (resettingView) return;
+    resettingView = true;
+    try {
+      map._resetView(map.getCenter(), map.getZoom(), true);
+    } catch (err) {
+      console.warn('[map] _resetView unavailable, positions may drift on zoom', err);
+    } finally {
+      resettingView = false;
+    }
+  });
+
   setTimeout(() => map.invalidateSize(), 200);
   window.addEventListener('resize', () => map.invalidateSize());
   window.addEventListener('orientationchange', () => map.invalidateSize());
