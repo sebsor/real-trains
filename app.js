@@ -1314,12 +1314,15 @@ async function searchTrips() {
       return;
     }
     results.innerHTML = '';
+    expandedTripCard = null;
     trips.forEach(trip => results.appendChild(renderTripCard(trip)));
   } catch (err) {
     console.error('[journey] trip search failed', err);
     results.innerHTML = `<p class="journey-status-msg">Kunde inte hämta resor (se konsolen). ${escapeHtml(err.message || '')}</p>`;
   }
 }
+
+let expandedTripCard = null; // tracks the single currently-open trip card, so opening a new one closes the previous
 
 function renderTripCard(trip) {
   const card = document.createElement('div');
@@ -1358,49 +1361,89 @@ function renderTripCard(trip) {
   const detail = document.createElement('div');
   detail.className = 'trip-detail';
   detail.hidden = true;
-  legs.forEach(leg => detail.appendChild(renderLegDetail(leg)));
+  detail.appendChild(renderTripDetail(legs));
   card.appendChild(detail);
 
   card.addEventListener('click', () => {
-    detail.hidden = !detail.hidden;
-    card.classList.toggle('expanded', !detail.hidden);
+    const wasOpen = !detail.hidden;
+    // Accordion: only one trip's detail open at a time, keeps the list readable.
+    if (expandedTripCard && expandedTripCard !== card) {
+      expandedTripCard.classList.remove('expanded');
+      expandedTripCard.querySelector('.trip-detail').hidden = true;
+    }
+    detail.hidden = wasOpen;
+    card.classList.toggle('expanded', !wasOpen);
+    expandedTripCard = wasOpen ? null : card;
   });
 
   return card;
 }
 
-function renderLegDetail(leg) {
+// Builds the itinerary as a single flowing list rather than per-leg blocks —
+// when one leg's arrival stop is the same physical stop as the next leg's
+// departure (a transfer, the common case), they're merged into one row
+// showing both times instead of printing the station name twice in a row.
+function renderTripDetail(legs) {
+  const container = document.createElement('div');
+  let lastRow = null;
+  let lastStopName = null;
+
+  legs.forEach(leg => {
+    if (leg.type === 'WALK' || leg.type === 'TRSF') {
+      container.appendChild(renderWalkDetailRow(leg));
+      lastRow = null;
+      lastStopName = null;
+      return;
+    }
+
+    const catCode = leg.Product && leg.Product[0] && leg.Product[0].catCode;
+    const mode = CAT_CODE_TO_MODE[catCode] || 'pendeltag';
+    const lineLabel = (leg.Product && leg.Product[0] && (leg.Product[0].displayNumber || leg.Product[0].line)) || leg.name || '?';
+    const originName = leg.Origin && leg.Origin.name;
+
+    if (lastRow && originName === lastStopName) {
+      // Same stop as the previous leg's arrival — append the departure
+      // time to that existing row instead of duplicating the stop name.
+      const timeEl = lastRow.querySelector('.trip-detail-time');
+      if (timeEl) timeEl.textContent = `${timeEl.textContent} → ${formatClock(leg.Origin && leg.Origin.time)}`;
+    } else {
+      container.appendChild(renderStopRow(leg.Origin, mode));
+    }
+
+    container.appendChild(renderLineRow(mode, lineLabel, leg.Destination && leg.Destination.name));
+
+    const destRow = renderStopRow(leg.Destination, mode);
+    container.appendChild(destRow);
+    lastRow = destRow;
+    lastStopName = leg.Destination && leg.Destination.name;
+  });
+
+  return container;
+}
+
+function renderStopRow(stop, mode) {
   const row = document.createElement('div');
-  row.className = 'trip-detail-leg';
-
-  if (leg.type === 'WALK' || leg.type === 'TRSF') {
-    row.innerHTML = `
-      <div class="trip-detail-walk">
-        🚶 Gå ${leg.dist ? `${leg.dist} m` : ''} ${leg.duration ? `(${formatIsoDuration(leg.duration)})` : ''}
-      </div>
-    `;
-    return row;
-  }
-
-  const catCode = leg.Product && leg.Product[0] && leg.Product[0].catCode;
-  const mode = CAT_CODE_TO_MODE[catCode] || 'pendeltag';
-  const lineLabel = (leg.Product && leg.Product[0] && (leg.Product[0].displayNumber || leg.Product[0].line)) || leg.name || '?';
-  const originTrack = leg.Origin && (leg.Origin.track || leg.Origin.rtTrack);
-  const destTrack = leg.Destination && (leg.Destination.track || leg.Destination.rtTrack);
-
+  row.className = 'trip-detail-stop';
+  const track = stop && (stop.track || stop.rtTrack);
   row.innerHTML = `
-    <div class="trip-detail-stop">
-      <span class="trip-detail-time">${formatClock(leg.Origin && leg.Origin.time)}</span>
-      <span class="trip-detail-dot dot-${mode}"></span>
-      <span class="trip-detail-name">${escapeHtml((leg.Origin && leg.Origin.name) || '')}${originTrack ? ` · läge ${escapeHtml(originTrack)}` : ''}</span>
-    </div>
-    <div class="trip-detail-line"><span class="dot-${mode}">${escapeHtml(lineLabel)}</span> mot ${escapeHtml((leg.Destination && leg.Destination.name) || '')}</div>
-    <div class="trip-detail-stop">
-      <span class="trip-detail-time">${formatClock(leg.Destination && leg.Destination.time)}</span>
-      <span class="trip-detail-dot dot-${mode}"></span>
-      <span class="trip-detail-name">${escapeHtml((leg.Destination && leg.Destination.name) || '')}${destTrack ? ` · läge ${escapeHtml(destTrack)}` : ''}</span>
-    </div>
+    <span class="trip-detail-time">${formatClock(stop && stop.time)}</span>
+    <span class="trip-detail-dot dot-${mode}"></span>
+    <span class="trip-detail-name">${escapeHtml((stop && stop.name) || '')}${track ? ` · läge ${escapeHtml(track)}` : ''}</span>
   `;
+  return row;
+}
+
+function renderLineRow(mode, lineLabel, destName) {
+  const row = document.createElement('div');
+  row.className = 'trip-detail-line';
+  row.innerHTML = `<span class="dot-${mode}">${escapeHtml(lineLabel)}</span> mot ${escapeHtml(destName || '')}`;
+  return row;
+}
+
+function renderWalkDetailRow(leg) {
+  const row = document.createElement('div');
+  row.className = 'trip-detail-walk';
+  row.textContent = `🚶 Gå ${leg.dist ? `${leg.dist} m` : ''} ${leg.duration ? `(${formatIsoDuration(leg.duration)})` : ''}`.trim();
   return row;
 }
 
