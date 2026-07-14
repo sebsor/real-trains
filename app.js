@@ -930,26 +930,24 @@ function renderVehicles(vehicles) {
     const id = (v.vehicle && v.vehicle.id) || (v.trip && v.trip.tripId) || `${v.position.latitude},${v.position.longitude}`;
     seen.add(id);
     const latlng = [v.position.latitude, v.position.longitude];
-    const bearing = v.position.bearing != null ? v.position.bearing : null;
+    const bearing = v.position.bearing != null ? v.position.bearing : 0;
 
-    let marker = vehicleMarkers.get(id);
-    if (!marker) {
-      const icon = L.divIcon({
-        className: `train-marker-wrap train-${kind}`,
-        html: `<div class="train-marker-pulse"></div><div class="train-marker-dot" style="transform:rotate(${bearing ?? 0}deg)"></div>`,
-        iconSize: [22, 22],
-        iconAnchor: [11, 11],
-      });
-      marker = L.marker(latlng, { icon, keyboard: false, zIndexOffset: 500 }).addTo(map);
-      vehicleMarkers.set(id, marker);
-    } else {
-      marker.setLatLng(latlng);
-      // Update heading in place rather than recreating the whole icon —
-      // cheaper, and avoids restarting the pulse animation every poll.
-      const el = marker.getElement();
-      const dot = el && el.querySelector('.train-marker-dot');
-      if (dot && bearing != null) dot.style.transform = `rotate(${bearing}deg)`;
-    }
+    // Recreated fresh every poll rather than repositioned via setLatLng —
+    // confirmed live that stations (created once, never setLatLng'd) stay
+    // correctly positioned at every zoom level while setLatLng-updated
+    // vehicle markers drift. Recreating trades a little extra work every
+    // 15s for using the same marker-creation path that's proven reliable.
+    const existing = vehicleMarkers.get(id);
+    if (existing) map.removeLayer(existing);
+
+    const icon = L.divIcon({
+      className: `train-marker-wrap train-${kind}`,
+      html: `<div class="train-marker-pulse"></div><div class="train-marker-dot" style="transform:rotate(${bearing}deg)"></div>`,
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
+    });
+    const marker = L.marker(latlng, { icon, keyboard: false, zIndexOffset: 500 }).addTo(map);
+    vehicleMarkers.set(id, marker);
 
     const label = (v.vehicle && v.vehicle.label) || id;
     const speedKmh = v.position.speed != null ? Math.round(v.position.speed * 3.6) : null;
