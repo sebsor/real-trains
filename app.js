@@ -1315,6 +1315,12 @@ async function searchTrips() {
     }
     results.innerHTML = '';
     expandedTripCard = null;
+
+    const header = document.createElement('div');
+    header.className = 'journey-route-header';
+    header.innerHTML = `${escapeHtml(journeyFrom.label)} → ${escapeHtml(journeyTo.label)}`;
+    results.appendChild(header);
+
     trips.forEach(trip => results.appendChild(renderTripCard(trip)));
   } catch (err) {
     console.error('[journey] trip search failed', err);
@@ -1379,71 +1385,102 @@ function renderTripCard(trip) {
   return card;
 }
 
-// Builds the itinerary as a single flowing list rather than per-leg blocks —
-// when one leg's arrival stop is the same physical stop as the next leg's
-// departure (a transfer, the common case), they're merged into one row
-// showing both times instead of printing the station name twice in a row.
+// Builds the itinerary as a timeline: each transit leg gets a colored
+// vertical bar (mode-colored) connecting its departure and arrival stops,
+// with a badge-style line label. Between legs, a distinct transfer row
+// shows the wait/change time — matching SL's own app structure, where a
+// stop CAN legitimately appear twice in a row (once as arrival, once as
+// the next leg's departure) as long as there's a clear transfer marker
+// between them, rather than silently merging them into one ambiguous row.
+// Note: intermediate/passthrough stops ("Visa X hållplatser" in SL's app)
+// aren't shown here — that needs a passlist request ResRobot supports but
+// this build doesn't currently ask for.
 function renderTripDetail(legs) {
   const container = document.createElement('div');
-  let lastRow = null;
-  let lastStopName = null;
 
-  legs.forEach(leg => {
+  legs.forEach((leg, i) => {
     if (leg.type === 'WALK' || leg.type === 'TRSF') {
-      container.appendChild(renderWalkDetailRow(leg));
-      lastRow = null;
-      lastStopName = null;
-      return;
-    }
-
-    const catCode = leg.Product && leg.Product[0] && leg.Product[0].catCode;
-    const mode = CAT_CODE_TO_MODE[catCode] || 'pendeltag';
-    const lineLabel = (leg.Product && leg.Product[0] && (leg.Product[0].displayNumber || leg.Product[0].line)) || leg.name || '?';
-    const originName = leg.Origin && leg.Origin.name;
-
-    if (lastRow && originName === lastStopName) {
-      // Same stop as the previous leg's arrival — append the departure
-      // time to that existing row instead of duplicating the stop name.
-      const timeEl = lastRow.querySelector('.trip-detail-time');
-      if (timeEl) timeEl.textContent = `${timeEl.textContent} → ${formatClock(leg.Origin && leg.Origin.time)}`;
+      container.appendChild(renderWalkLeg(leg));
     } else {
-      container.appendChild(renderStopRow(leg.Origin, mode));
+      container.appendChild(renderTransitLeg(leg));
     }
 
-    container.appendChild(renderLineRow(mode, lineLabel, leg.Destination && leg.Destination.name));
-
-    const destRow = renderStopRow(leg.Destination, mode);
-    container.appendChild(destRow);
-    lastRow = destRow;
-    lastStopName = leg.Destination && leg.Destination.name;
+    const nextLeg = legs[i + 1];
+    if (nextLeg) {
+      const thisEnd = leg.Destination && leg.Destination.time;
+      const nextStart = nextLeg.Origin && nextLeg.Origin.time;
+      const waitMin = minutesBetween(thisEnd, nextStart);
+      if (waitMin != null && waitMin > 0) {
+        container.appendChild(renderTransferRow(waitMin));
+      }
+    }
   });
 
   return container;
 }
 
-function renderStopRow(stop, mode) {
-  const row = document.createElement('div');
-  row.className = 'trip-detail-stop';
-  const track = stop && (stop.track || stop.rtTrack);
-  row.innerHTML = `
-    <span class="trip-detail-time">${formatClock(stop && stop.time)}</span>
-    <span class="trip-detail-dot dot-${mode}"></span>
-    <span class="trip-detail-name">${escapeHtml((stop && stop.name) || '')}${track ? ` · läge ${escapeHtml(track)}` : ''}</span>
+function minutesBetween(hhmmss1, hhmmss2) {
+  if (!hhmmss1 || !hhmmss2) return null;
+  const [h1, m1] = hhmmss1.split(':').map(Number);
+  const [h2, m2] = hhmmss2.split(':').map(Number);
+  if ([h1, m1, h2, m2].some(Number.isNaN)) return null;
+  return (h2 * 60 + m2) - (h1 * 60 + m1);
+}
+
+function renderTransitLeg(leg) {
+  const catCode = leg.Product && leg.Product[0] && leg.Product[0].catCode;
+  const mode = CAT_CODE_TO_MODE[catCode] || 'pendeltag';
+  const lineLabel = (leg.Product && leg.Product[0] && (leg.Product[0].displayNumber || leg.Product[0].line)) || leg.name || '?';
+  const originTrack = leg.Origin && (leg.Origin.track || leg.Origin.rtTrack);
+  const destTrack = leg.Destination && (leg.Destination.track || leg.Destination.rtTrack);
+
+  const wrap = document.createElement('div');
+  wrap.className = `itin-leg itin-${mode}`;
+  wrap.innerHTML = `
+    <div class="itin-stop">
+      <span class="itin-time">${formatClock(leg.Origin && leg.Origin.time)}</span>
+      <span class="itin-name">${escapeHtml((leg.Origin && leg.Origin.name) || '')}</span>
+      ${originTrack ? `<span class="itin-track">Läge ${escapeHtml(originTrack)}</span>` : ''}
+    </div>
+    <div class="itin-line-info">
+      <span class="itin-badge dot-${mode}">${escapeHtml(lineLabel)}</span>
+      <span class="itin-line-desc">mot ${escapeHtml((leg.Destination && leg.Destination.name) || '')}</span>
+    </div>
+    <div class="itin-stop">
+      <span class="itin-time">${formatClock(leg.Destination && leg.Destination.time)}</span>
+      <span class="itin-name">${escapeHtml((leg.Destination && leg.Destination.name) || '')}</span>
+      ${destTrack ? `<span class="itin-track">Läge ${escapeHtml(destTrack)}</span>` : ''}
+    </div>
   `;
-  return row;
+  return wrap;
 }
 
-function renderLineRow(mode, lineLabel, destName) {
-  const row = document.createElement('div');
-  row.className = 'trip-detail-line';
-  row.innerHTML = `<span class="dot-${mode}">${escapeHtml(lineLabel)}</span> mot ${escapeHtml(destName || '')}`;
-  return row;
+function renderWalkLeg(leg) {
+  const wrap = document.createElement('div');
+  wrap.className = 'itin-leg itin-walk';
+  const distLabel = leg.dist ? `${leg.dist} m` : '';
+  const durLabel = leg.duration ? formatIsoDuration(leg.duration) : '';
+  wrap.innerHTML = `
+    <div class="itin-stop">
+      <span class="itin-time">${formatClock(leg.Origin && leg.Origin.time)}</span>
+      <span class="itin-name">${escapeHtml((leg.Origin && leg.Origin.name) || '')}</span>
+    </div>
+    <div class="itin-line-info">
+      <span class="itin-walk-icon">🚶</span>
+      <span class="itin-line-desc">Promenad ${distLabel} ${durLabel ? `(${durLabel})` : ''}</span>
+    </div>
+    <div class="itin-stop">
+      <span class="itin-time">${formatClock(leg.Destination && leg.Destination.time)}</span>
+      <span class="itin-name">${escapeHtml((leg.Destination && leg.Destination.name) || '')}</span>
+    </div>
+  `;
+  return wrap;
 }
 
-function renderWalkDetailRow(leg) {
+function renderTransferRow(waitMin) {
   const row = document.createElement('div');
-  row.className = 'trip-detail-walk';
-  row.textContent = `🚶 Gå ${leg.dist ? `${leg.dist} m` : ''} ${leg.duration ? `(${formatIsoDuration(leg.duration)})` : ''}`.trim();
+  row.className = 'itin-transfer';
+  row.textContent = `${waitMin} min · Byte`;
   return row;
 }
 

@@ -450,20 +450,65 @@ body{
 
 .trip-detail{
   margin-top:14px;padding-top:14px;border-top:1px solid var(--border);
-  display:flex;flex-direction:column;gap:10px;
+  display:flex;flex-direction:column;gap:0;
   font-family:'JetBrains Mono',monospace;font-size:12px;
 }
-.trip-detail-leg{padding-left:4px;}
-.trip-detail-stop{display:flex;align-items:center;gap:8px;}
-.trip-detail-time{color:var(--amber);font-weight:600;min-width:38px;}
-.trip-detail-dot{width:8px;height:8px;border-radius:50%;flex:none;}
-.trip-detail-name{color:var(--text);}
-.trip-detail-line{
-  margin:4px 0 4px 46px;color:var(--muted);
-  font-family:'Space Grotesk',system-ui,sans-serif;font-size:12px;
+.trip-detail[hidden]{display:none;}
+
+.journey-route-header{
+  font-family:'Space Grotesk',system-ui,sans-serif;font-size:13px;font-weight:600;
+  color:var(--text);margin-bottom:4px;
 }
-.trip-detail-line span{font-weight:600;color:var(--text);}
-.trip-detail-walk{color:var(--muted);font-style:italic;padding:2px 0 2px 46px;}
+
+/* Each leg is a colored vertical bar (mode-colored) with its two stops
+   pinned to top/bottom, mirroring SL's own app layout. */
+.itin-leg{
+  position:relative;padding:6px 0 6px 20px;
+  border-left:3px solid var(--muted);margin-left:6px;
+}
+.itin-pendeltag{border-left-color:var(--pendeltag);}
+.itin-roslagsbanan{border-left-color:var(--roslagsbanan);}
+.itin-metro{border-left-color:var(--metro);}
+.itin-tram{border-left-color:var(--tram);}
+.itin-bus{border-left-color:var(--bus);}
+.itin-boat{border-left-color:var(--boat);}
+.itin-walk{border-left-color:#3a4150;border-left-style:dashed;}
+
+.itin-stop{position:relative;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.itin-stop::before{
+  content:'';position:absolute;left:-25px;top:50%;transform:translateY(-50%);
+  width:9px;height:9px;border-radius:50%;background:var(--panel-2);border:2px solid currentColor;
+}
+.itin-leg::before{color:inherit;}
+.itin-pendeltag .itin-stop::before{color:var(--pendeltag);}
+.itin-roslagsbanan .itin-stop::before{color:var(--roslagsbanan);}
+.itin-metro .itin-stop::before{color:var(--metro);}
+.itin-tram .itin-stop::before{color:var(--tram);}
+.itin-bus .itin-stop::before{color:var(--bus);}
+.itin-boat .itin-stop::before{color:var(--boat);}
+.itin-walk .itin-stop::before{color:#3a4150;}
+
+.itin-time{color:var(--amber);font-weight:600;min-width:38px;}
+.itin-name{color:var(--text);font-weight:500;}
+.itin-track{
+  font-size:10px;color:var(--muted);background:var(--panel);
+  padding:2px 6px;border-radius:4px;
+}
+.itin-line-info{
+  display:flex;align-items:center;gap:8px;margin:8px 0;
+  font-family:'Space Grotesk',system-ui,sans-serif;font-size:12px;color:var(--muted);
+}
+.itin-badge{
+  color:#0d1117;font-weight:700;font-size:11px;
+  padding:3px 8px;border-radius:5px;flex:none;
+}
+.itin-line-desc{color:var(--muted);}
+.itin-walk-icon{font-size:14px;}
+
+.itin-transfer{
+  margin:2px 0 2px 20px;padding:4px 0;
+  color:var(--muted);font-size:11px;font-style:italic;
+}
 
 @media (max-width:640px){
   #journey-panel{width:100%;}
