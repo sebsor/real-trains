@@ -29,6 +29,15 @@ const SL_STOP_POINTS_URL = 'https://transport.integration.sl.se/v1/stop-points';
 const SL_DEPARTURES_URL = (siteId) => `https://transport.integration.sl.se/v1/sites/${siteId}/departures`;
 const GTFS_RT_URL = (key) => `https://opendata.samtrafiken.se/gtfs-rt/sl/VehiclePositions.pb?key=${key}`;
 const GTFS_STATIC_URL = (key) => `https://opendata.samtrafiken.se/gtfs/sl/sl.zip?key=${key}`; // uses staticApiKey, not apiKey
+const RESROBOT_LOCATION_URL = (query, key) =>
+  `https://api.resrobot.se/v2.1/location.name?input=${encodeURIComponent(query)}&type=SA&format=json&accessId=${key}`;
+const RESROBOT_TRIP_URL = (params, key) => {
+  const qs = new URLSearchParams({ ...params, format: 'json', accessId: key });
+  return `https://api.resrobot.se/v2.1/trip?${qs.toString()}`;
+};
+// ResRobot's Product.catCode (1-9) maps roughly onto our existing mode
+// palette, so trip legs can reuse the same colors as the live map.
+const CAT_CODE_TO_MODE = { '5': 'metro', '6': 'tram', '7': 'bus', '8': 'boat' }; // 1,2,4 (various trains) fall back to 'pendeltag' color
 const TRAIN_TRIPS_CACHE_KEY = 'sl_mode_trips_v2';
 const TRAIN_TRIPS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // static schedule data changes daily at most
 
@@ -102,6 +111,9 @@ message VehicleDescriptor {
 let map;
 let apiKey = localStorage.getItem('trafiklab_api_key') || '';               // realtime (VehiclePositions)
 let staticApiKey = localStorage.getItem('trafiklab_static_api_key') || '';  // static GTFS (routes/trips)
+let resrobotApiKey = localStorage.getItem('trafiklab_resrobot_api_key') || ''; // ResRobot (journey planner)
+let journeyFrom = null; // { label, lat, lon, extId? } — extId set only when a real stop was picked
+let journeyTo = null;
 let trainTripMap = {};          // trip_id -> mode, from static GTFS
 let stationMarkers = new Map(); // siteId -> { marker, mode }
 let vehicleMarkers = new Map(); // vehicleId -> Leaflet marker
@@ -115,10 +127,11 @@ document.addEventListener('DOMContentLoaded', () => {
   initMap();
   wireSetupModal();
   wireBoard();
+  wireJourneyPanel();
 
   loadStations();     // works with no API key
 
-  if (!apiKey || !staticApiKey) {
+  if (!apiKey || !staticApiKey || !resrobotApiKey) {
     document.getElementById('setup-overlay').removeAttribute('hidden');
   }
   if (apiKey) {
@@ -181,13 +194,16 @@ function wireSetupModal() {
   const overlay = document.getElementById('setup-overlay');
   const input = document.getElementById('setup-key-input');
   const staticInput = document.getElementById('setup-static-key-input');
+  const resrobotInput = document.getElementById('setup-resrobot-key-input');
   input.value = apiKey;
   staticInput.value = staticApiKey;
+  resrobotInput.value = resrobotApiKey;
 
   document.getElementById('setup-save').addEventListener('click', () => {
     const val = input.value.trim();
     const staticVal = staticInput.value.trim();
-    if (!val && !staticVal) return;
+    const resrobotVal = resrobotInput.value.trim();
+    if (!val && !staticVal && !resrobotVal) return;
 
     if (val) {
       apiKey = val;
@@ -200,6 +216,10 @@ function wireSetupModal() {
       loadTrainTripClassification().then(() => {
         if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
       });
+    }
+    if (resrobotVal) {
+      resrobotApiKey = resrobotVal;
+      localStorage.setItem('trafiklab_resrobot_api_key', resrobotApiKey);
     }
     overlay.setAttribute('hidden', '');
   });
@@ -651,4 +671,250 @@ function registerServiceWorker() {
     navigator.serviceWorker.register('sw.js').catch(err =>
       console.warn('[sw] registration failed', err));
   }
+}
+
+// ==========================================================================
+// Journey planner (ResRobot: address/stop -> address/stop, with walking legs)
+// ==========================================================================
+function wireJourneyPanel() {
+  const toggle = document.getElementById('journey-toggle');
+  const panel = document.getElementById('journey-panel');
+  const closeBtn = document.getElementById('journey-close');
+
+  toggle.addEventListener('click', () => {
+    const opening = !panel.classList.contains('open');
+    panel.classList.toggle('open', opening);
+    panel.setAttribute('aria-hidden', String(!opening));
+    toggle.classList.toggle('active', opening);
+  });
+  closeBtn.addEventListener('click', () => {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    toggle.classList.remove('active');
+  });
+
+  wireJourneyAutocomplete('from');
+  wireJourneyAutocomplete('to');
+
+  document.getElementById('journey-swap').addEventListener('click', () => {
+    [journeyFrom, journeyTo] = [journeyTo, journeyFrom];
+    document.getElementById('journey-from').value = journeyFrom ? journeyFrom.label : '';
+    document.getElementById('journey-to').value = journeyTo ? journeyTo.label : '';
+  });
+
+  document.getElementById('journey-use-location').addEventListener('click', useCurrentLocationAsFrom);
+
+  document.getElementById('journey-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    searchTrips();
+  });
+}
+
+function useCurrentLocationAsFrom() {
+  const btn = document.getElementById('journey-use-location');
+  if (!navigator.geolocation) {
+    console.warn('[journey] geolocation not available in this browser');
+    return;
+  }
+  btn.classList.add('active');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      journeyFrom = {
+        label: 'Min plats',
+        lat: pos.coords.latitude,
+        lon: pos.coords.longitude,
+      };
+      document.getElementById('journey-from').value = journeyFrom.label;
+    },
+    (err) => {
+      console.error('[journey] geolocation failed', err);
+      btn.classList.remove('active');
+      alert('Kunde inte hämta din plats. Kontrollera platsbehörighet i webbläsaren.');
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+// Debounced address/stop autocomplete against ResRobot's location.name
+// (type=SA — stops AND addresses combined, confirmed in the OpenAPI spec).
+function wireJourneyAutocomplete(which) {
+  const input = document.getElementById(`journey-${which}`);
+  const list = document.getElementById(`journey-${which}-suggestions`);
+  let debounceTimer = null;
+
+  input.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    const query = input.value.trim();
+    if (which === 'from') journeyFrom = null; // typing invalidates a previous geolocation/pick
+    else journeyTo = null;
+
+    if (query.length < 2) {
+      list.hidden = true;
+      return;
+    }
+    if (!resrobotApiKey) {
+      list.hidden = true;
+      return;
+    }
+    debounceTimer = setTimeout(() => fetchSuggestions(query, list, which, input), 300);
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!list.contains(e.target) && e.target !== input) list.hidden = true;
+  });
+}
+
+async function fetchSuggestions(query, list, which, input) {
+  try {
+    const res = await fetch(RESROBOT_LOCATION_URL(query, resrobotApiKey));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    window.DEBUG_LAST_LOCATION_SEARCH = data;
+
+    const entries = data && data.stopLocationOrCoordLocation
+      ? data.stopLocationOrCoordLocation.map(e => e.StopLocation).filter(Boolean)
+      : [];
+
+    list.innerHTML = '';
+    if (!entries.length) {
+      list.hidden = true;
+      return;
+    }
+    entries.slice(0, 8).forEach(entry => {
+      const li = document.createElement('li');
+      const isStop = entry.extId != null && !Number.isNaN(Number(entry.extId));
+      li.innerHTML = `<span class="suggestion-type">${isStop ? 'Station' : 'Adress'}</span><span>${escapeHtml(entry.name)}</span>`;
+      li.addEventListener('click', () => {
+        const picked = { label: entry.name, lat: entry.lat, lon: entry.lon, extId: isStop ? entry.extId : null };
+        if (which === 'from') journeyFrom = picked; else journeyTo = picked;
+        input.value = entry.name;
+        list.hidden = true;
+      });
+      list.appendChild(li);
+    });
+    list.hidden = false;
+  } catch (err) {
+    console.error('[journey] address/stop lookup failed', err);
+    list.hidden = true;
+  }
+}
+
+async function searchTrips() {
+  const results = document.getElementById('journey-results');
+  if (!resrobotApiKey) {
+    results.innerHTML = '<p class="journey-status-msg">Ingen ResRobot-nyckel angiven — lägg till en i inställningarna för att söka resor.</p>';
+    return;
+  }
+  if (!journeyFrom || !journeyTo) {
+    results.innerHTML = '<p class="journey-status-msg">Välj både en start- och slutpunkt från förslagslistan (eller använd "min plats").</p>';
+    return;
+  }
+
+  results.innerHTML = '<p class="journey-status-msg">Söker resor…</p>';
+
+  // Prefer the stop extId when we have one (more precise for transit legs);
+  // fall back to raw coordinates for addresses/current-location, with
+  // walking legs enabled so ResRobot can route on foot to/from transit —
+  // this is exactly what originWalk/destWalk are documented for.
+  const params = {};
+  if (journeyFrom.extId) params.originId = journeyFrom.extId;
+  else {
+    params.originCoordLat = journeyFrom.lat;
+    params.originCoordLong = journeyFrom.lon;
+    params.originWalk = '1,0,1500';
+  }
+  if (journeyTo.extId) params.destId = journeyTo.extId;
+  else {
+    params.destCoordLat = journeyTo.lat;
+    params.destCoordLong = journeyTo.lon;
+    params.destWalk = '1,0,1500';
+  }
+
+  try {
+    const res = await fetch(RESROBOT_TRIP_URL(params, resrobotApiKey));
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status} ${body}`.trim());
+    }
+    const data = await res.json();
+    window.DEBUG_LAST_TRIPS = data; // inspect: window.DEBUG_LAST_TRIPS
+
+    if (data.errorCode) throw new Error(`${data.errorCode}: ${data.errorText || ''}`);
+
+    const trips = data.Trip || [];
+    if (!trips.length) {
+      results.innerHTML = '<p class="journey-status-msg">Inga resor hittades för den här sträckan.</p>';
+      return;
+    }
+    results.innerHTML = '';
+    trips.forEach(trip => results.appendChild(renderTripCard(trip)));
+  } catch (err) {
+    console.error('[journey] trip search failed', err);
+    results.innerHTML = `<p class="journey-status-msg">Kunde inte hämta resor (se konsolen). ${escapeHtml(err.message || '')}</p>`;
+  }
+}
+
+function renderTripCard(trip) {
+  const card = document.createElement('div');
+  card.className = 'trip-card';
+
+  const legs = (trip.LegList && trip.LegList.Leg) || [];
+  const depTime = legs[0] && legs[0].Origin && legs[0].Origin.time;
+  const arrTime = legs[legs.length - 1] && legs[legs.length - 1].Destination && legs[legs.length - 1].Destination.time;
+  const durationLabel = formatIsoDuration(trip.duration);
+
+  const summary = document.createElement('div');
+  summary.className = 'trip-summary';
+  summary.innerHTML = `
+    <span class="trip-times">${formatClock(depTime)} → ${formatClock(arrTime)}</span>
+    <span class="trip-duration">${durationLabel}</span>
+  `;
+  card.appendChild(summary);
+
+  const legsRow = document.createElement('div');
+  legsRow.className = 'trip-legs';
+  legs.forEach((leg, i) => {
+    if (i > 0) {
+      const arrow = document.createElement('span');
+      arrow.className = 'trip-leg-arrow';
+      arrow.textContent = '→';
+      legsRow.appendChild(arrow);
+    }
+    legsRow.appendChild(renderLegChip(leg));
+  });
+  card.appendChild(legsRow);
+
+  return card;
+}
+
+function renderLegChip(leg) {
+  const chip = document.createElement('span');
+  if (leg.type === 'WALK' || leg.type === 'TRSF') {
+    chip.className = 'trip-leg trip-leg-walk';
+    chip.textContent = leg.dist ? `Gå ${leg.dist} m` : 'Gå';
+    return chip;
+  }
+  const catCode = leg.Product && leg.Product[0] && leg.Product[0].catCode;
+  const mode = CAT_CODE_TO_MODE[catCode] || 'pendeltag';
+  const lineLabel = (leg.Product && leg.Product[0] && (leg.Product[0].displayNumber || leg.Product[0].line)) || leg.name || '?';
+
+  chip.className = 'trip-leg';
+  chip.innerHTML = `<span class="trip-leg-dot dot-${mode}"></span><span>${escapeHtml(lineLabel)}</span>`;
+  return chip;
+}
+
+function formatClock(hhmmss) {
+  if (!hhmmss) return '—';
+  return hhmmss.slice(0, 5);
+}
+
+// ResRobot durations are ISO 8601 ("PT14H47M", "PT10M") — parse the pieces
+// we expect (hours/minutes) rather than pulling in a full ISO 8601 library.
+function formatIsoDuration(iso) {
+  if (!iso) return '';
+  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?/.exec(iso);
+  if (!match) return iso;
+  const h = match[1] ? `${match[1]}h ` : '';
+  const m = match[2] ? `${match[2]}min` : '';
+  return (h + m).trim() || iso;
 }
