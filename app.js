@@ -43,6 +43,7 @@ const RESROBOT_TRIP_URL = (params, key) => {
 const CAT_CODE_TO_MODE = { '5': 'metro', '6': 'tram', '7': 'bus', '8': 'boat' }; // 1,2,4 (various trains) fall back to 'pendeltag' color
 const TRAIN_TRIPS_CACHE_KEY = 'sl_mode_trips_v3';
 const TRAIN_TRIPS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // static schedule data changes daily at most
+const LEGEND_PREFS_KEY = 'sparlage_legend_prefs_v1';
 
 const VEHICLE_POLL_MS = 15000; // GTFS-RT vehicle positions update ~every 2s server-side, but poll politely
 const STOCKHOLM_CENTER = [59.334, 18.06];
@@ -138,6 +139,9 @@ document.addEventListener('DOMContentLoaded', () => {
   wireBoard();
   wireJourneyPanel();
 
+  loadLegendPrefs(); // must run before loadStations() — activeModes affects which markers get created
+  syncLegendCheckboxesToState();
+
   loadStations();     // works with no API key
 
   if (!apiKey || !staticApiKey || !resrobotApiKey) {
@@ -158,6 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('vehicles-toggle').addEventListener('change', (e) => {
     vehiclesVisible = e.target.checked;
+    saveLegendPrefs();
     if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
   });
 
@@ -178,9 +183,48 @@ function wireModeCheckboxes() {
       const mode = input.dataset.mode;
       if (input.checked) activeModes.add(mode);
       else activeModes.delete(mode);
+      saveLegendPrefs();
       refreshAllStationVisibility();
       if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
     });
+  });
+}
+
+// First-time visitors get a lighter default (just the two trains — the
+// core use case) rather than every mode at once, since rendering ~6500
+// sites plus hundreds of vehicles all at startup is what was causing the
+// lag. Returning visitors get back whatever they last had on.
+function loadLegendPrefs() {
+  try {
+    const raw = localStorage.getItem(LEGEND_PREFS_KEY);
+    if (raw) {
+      const prefs = JSON.parse(raw);
+      activeModes = new Set(prefs.activeModes);
+      vehiclesVisible = prefs.vehiclesVisible !== false;
+      return;
+    }
+  } catch (err) {
+    console.warn('[legend] could not read saved preferences, using defaults', err);
+  }
+  activeModes = new Set(['roslagsbanan']);
+  vehiclesVisible = true;
+}
+
+function saveLegendPrefs() {
+  try {
+    localStorage.setItem(LEGEND_PREFS_KEY, JSON.stringify({
+      activeModes: [...activeModes],
+      vehiclesVisible,
+    }));
+  } catch (err) {
+    console.warn('[legend] could not save preferences (localStorage full?)', err);
+  }
+}
+
+function syncLegendCheckboxesToState() {
+  document.getElementById('vehicles-toggle').checked = vehiclesVisible;
+  document.querySelectorAll('.mode-checkbox').forEach(input => {
+    input.checked = activeModes.has(input.dataset.mode);
   });
 }
 
@@ -192,6 +236,18 @@ function initMap() {
     subdomains: 'abcd',
     maxZoom: 19,
   }).addTo(map);
+
+  // If the container's final pixel size isn't settled at the exact moment
+  // L.map() runs (common in full-screen layouts, especially mobile where
+  // the address bar changing height shifts the viewport after load),
+  // Leaflet's internal pixel-origin cache goes stale — every marker then
+  // sits off by a fixed screen-pixel amount, which is invisible up close
+  // but represents more real-world distance the further you zoom out.
+  // Forcing a recalculation after load (and on resize) fixes this class
+  // of bug outright.
+  setTimeout(() => map.invalidateSize(), 200);
+  window.addEventListener('resize', () => map.invalidateSize());
+  window.addEventListener('orientationchange', () => map.invalidateSize());
 }
 
 function setStatus(kind, text) {
