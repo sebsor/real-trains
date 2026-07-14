@@ -134,6 +134,7 @@ let vehiclePollTimer = null;
 // Boot
 // ==========================================================================
 document.addEventListener('DOMContentLoaded', () => {
+  checkStorageAvailable();
   wireSetupModal();
   wireJourneyPanel();
   wireStartScreen();
@@ -148,6 +149,21 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('setup-overlay').removeAttribute('hidden');
   }
 });
+
+// Confirms whether localStorage actually persists in this browsing
+// context — private/incognito mode in several mobile browsers blocks or
+// throws on writes, which would otherwise fail completely silently and
+// look identical to "the app just doesn't remember my keys".
+function checkStorageAvailable() {
+  try {
+    localStorage.setItem('__storage_test__', '1');
+    localStorage.removeItem('__storage_test__');
+    console.log('[storage] localStorage is writable — keys should persist across reloads');
+  } catch (err) {
+    console.error('[storage] localStorage is NOT writable — keys will NOT persist across reloads. ' +
+      'This is almost always private/incognito browsing mode blocking storage writes.', err);
+  }
+}
 
 function wireStartScreen() {
   document.getElementById('start-map').addEventListener('click', startMapMode);
@@ -424,23 +440,40 @@ function wireSetupModal() {
     const resrobotVal = resrobotInput.value.trim();
     if (!val && !staticVal && !resrobotVal) return;
 
+    let persistFailed = false;
+    const persist = (key, value) => {
+      try {
+        localStorage.setItem(key, value);
+      } catch (err) {
+        console.error(`[setup] failed to save ${key} to localStorage`, err);
+        persistFailed = true;
+      }
+    };
+
     if (val) {
       apiKey = val;
-      localStorage.setItem('trafiklab_api_key', apiKey);
+      persist('trafiklab_api_key', apiKey);
       startVehiclePolling();
     }
     if (staticVal) {
       staticApiKey = staticVal;
-      localStorage.setItem('trafiklab_static_api_key', staticApiKey);
+      persist('trafiklab_static_api_key', staticApiKey);
       loadTrainTripClassification().then(() => {
         if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
       });
     }
     if (resrobotVal) {
       resrobotApiKey = resrobotVal;
-      localStorage.setItem('trafiklab_resrobot_api_key', resrobotApiKey);
+      persist('trafiklab_resrobot_api_key', resrobotApiKey);
     }
     overlay.setAttribute('hidden', '');
+
+    if (persistFailed) {
+      // Keys still work for this session (the variables are set above) but
+      // won't survive a reload — most commonly caused by private/incognito
+      // browsing mode blocking or throwing on localStorage writes.
+      alert('Nycklarna kunde inte sparas permanent (fungerar bara för denna session). Detta händer oftast i privat/inkognitoläge — prova ett vanligt webbläsarfönster om du vill slippa mata in dem varje gång.');
+    }
   });
 
   document.getElementById('setup-skip').addEventListener('click', () => {
