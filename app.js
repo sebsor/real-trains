@@ -138,6 +138,12 @@ document.addEventListener('DOMContentLoaded', () => {
   wireJourneyPanel();
   wireStartScreen();
   registerServiceWorker();
+
+  // Shown once, up front, only if at least one key hasn't been set yet —
+  // not re-prompted every time a flow is entered.
+  if (!apiKey || !staticApiKey || !resrobotApiKey) {
+    document.getElementById('setup-overlay').removeAttribute('hidden');
+  }
 });
 
 function wireStartScreen() {
@@ -163,9 +169,6 @@ async function startMapMode() {
   cleanupStaleLocalStorageKeys();
   setLoadingProgress(10, 'Förbereder…');
 
-  if (!apiKey || !staticApiKey || !resrobotApiKey) {
-    document.getElementById('setup-overlay').removeAttribute('hidden');
-  }
   if (apiKey) {
     startVehiclePolling();
   } else {
@@ -227,10 +230,6 @@ function startJourneyMode() {
   // avoids having to hand-unwind map/polling state that was never started
   // in this path anyway.
   document.getElementById('journey-back').addEventListener('click', () => location.reload(), { once: true });
-
-  if (!resrobotApiKey) {
-    document.getElementById('setup-overlay').removeAttribute('hidden');
-  }
 }
 
 function wireStationSearch() {

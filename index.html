@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
 
@@ -163,9 +163,9 @@
       <li>Lägg till <strong>GTFS Regional Realtime</strong>, <strong>GTFS Regional Static data</strong> och <strong>ResRobot v2.1</strong> i projektet — vardera ger en egen nyckel.</li>
       <li>Klistra in nycklarna nedan (valfritt att fylla i alla tre — det som saknas stängs bara av).</li>
     </ol>
-    <input type="text" id="setup-key-input" placeholder="Realtime-nyckel (fordonspositioner)" autocomplete="off" spellcheck="false">
-    <input type="text" id="setup-static-key-input" placeholder="Static data-nyckel (linjeklassificering)" autocomplete="off" spellcheck="false" style="margin-top:8px;">
-    <input type="text" id="setup-resrobot-key-input" placeholder="ResRobot-nyckel (reseplanerare)" autocomplete="off" spellcheck="false" style="margin-top:8px;">
+    <input type="text" id="setup-key-input" class="setup-key-input" placeholder="Realtime-nyckel (fordonspositioner)" autocomplete="off" spellcheck="false">
+    <input type="text" id="setup-static-key-input" class="setup-key-input" placeholder="Static data-nyckel (linjeklassificering)" autocomplete="off" spellcheck="false">
+    <input type="text" id="setup-resrobot-key-input" class="setup-key-input" placeholder="ResRobot-nyckel (reseplanerare)" autocomplete="off" spellcheck="false">
     <div class="setup-actions">
       <button id="setup-save" type="button" class="btn-primary">Spara och starta</button>
       <button id="setup-skip" type="button" class="btn-ghost">Fortsätt utan (bara stationer)</button>
@@ -177,6 +177,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/protobufjs/8.0.2/protobuf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.5.4/papaparse.min.js"></script>
-<script src="app.js?v=17"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>

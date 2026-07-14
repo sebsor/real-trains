@@ -315,7 +315,7 @@ body{
 
 /* ---- Setup modal ---- */
 #setup-overlay{
-  position:absolute;inset:0;z-index:2000;
+  position:absolute;inset:0;z-index:3500;
   background:rgba(13,17,23,.82);backdrop-filter:blur(3px);
   display:flex;align-items:center;justify-content:center;padding:20px;
 }
@@ -332,12 +332,13 @@ body{
 .setup-copy{color:var(--muted);font-size:13px;line-height:1.5;margin:0 0 16px;}
 .setup-steps{color:var(--text);font-size:13px;line-height:1.7;margin:0 0 18px;padding-left:20px;}
 .setup-steps a{color:var(--amber);}
-#setup-key-input{
+.setup-key-input{
   width:100%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);
   border-radius:8px;padding:10px 12px;font-family:'JetBrains Mono',monospace;font-size:13px;
-  margin-bottom:16px;
+  margin-bottom:10px;display:block;
 }
-#setup-key-input:focus{outline:2px solid var(--amber);outline-offset:1px;}
+.setup-key-input:last-of-type{margin-bottom:16px;}
+.setup-key-input:focus{outline:2px solid var(--amber);outline-offset:1px;}
 .setup-actions{display:flex;gap:10px;flex-wrap:wrap;}
 .btn-primary,.btn-ghost{
   font-family:'Space Grotesk',system-ui,sans-serif;font-size:13px;font-weight:600;
