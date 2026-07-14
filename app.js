@@ -331,6 +331,13 @@ function forceViewResync() {
   resettingView = true;
   try {
     map._resetView(map.getCenter(), map.getZoom(), true);
+    // Vehicles are recreated fresh every 15s poll, which self-corrects any
+    // drift — but that leaves up to a 15s window after a zoom/pan where
+    // they'd stay stale until the next poll happens to fire. Re-running
+    // renderVehicles() here (the same full-recreation path already proven
+    // correct, NOT marker.setLatLng — that's the mechanism we already
+    // suspected of being unreliable and moved away from) closes that gap.
+    if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
   } catch (err) {
     console.warn('[map] _resetView unavailable, positions may drift on zoom', err);
   } finally {
