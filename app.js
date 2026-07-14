@@ -946,7 +946,7 @@ function renderVehicles(vehicles) {
       iconSize: [22, 22],
       iconAnchor: [11, 11],
     });
-    const marker = L.marker(latlng, { icon, keyboard: false, zIndexOffset: 500 }).addTo(map);
+    const marker = L.marker(latlng, { icon, keyboard: false }).addTo(map);
     vehicleMarkers.set(id, marker);
 
     const label = (v.vehicle && v.vehicle.label) || id;
