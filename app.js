@@ -12,16 +12,19 @@
 
    How mode classification actually works (confirmed live, not guessed):
    - Stations: /v1/stop-points gives each stop_area a `type` — RAILWSTN,
-     METROSTN, TRAMSTN, BUSTERM, SHIPBER/FERRYBER — which maps directly to
-     a mode. Rail does NOT distinguish Pendeltåg from Roslagsbanan at the
-     station level; that split isn't available without a site->line join
-     SL's API doesn't expose, so rail stations show one merged color.
+     METROSTN, TRAMSTN, BUSTERM, SHIPBER/FERRYBER. This is a good first
+     pass but NOT enough on its own: Roslagsbanan stop_areas are typed
+     TRAMSTN (it's narrow-gauge/light-rail, so SL buckets it with real
+     trams), which would otherwise misclassify it. The authoritative fix:
+     join the static GTFS stop_times.txt against the same train trip_ids
+     already identified for vehicle classification, giving the *actual*
+     station list per line (pendeltag vs roslagsbanan) rather than relying
+     on the type field. See buildRailAreaOverrides().
    - Vehicles: the real-time feed almost never populates trip.routeId or
      vehicle.label (confirmed: 13 of 1065 vehicles had a routeId at all).
      The only reliable path is joining each vehicle's trip_id against
      SL's static GTFS schedule (routes.txt + trips.txt), which DOES carry
-     real route names — this lets Pendeltåg/Roslagsbanan be split
-     correctly at the vehicle level, unlike stations.
+     real route names.
    ========================================================================== */
 
 const SL_SITES_URL = 'https://transport.integration.sl.se/v1/sites?expand=true';
@@ -38,7 +41,7 @@ const RESROBOT_TRIP_URL = (params, key) => {
 // ResRobot's Product.catCode (1-9) maps roughly onto our existing mode
 // palette, so trip legs can reuse the same colors as the live map.
 const CAT_CODE_TO_MODE = { '5': 'metro', '6': 'tram', '7': 'bus', '8': 'boat' }; // 1,2,4 (various trains) fall back to 'pendeltag' color
-const TRAIN_TRIPS_CACHE_KEY = 'sl_mode_trips_v2';
+const TRAIN_TRIPS_CACHE_KEY = 'sl_mode_trips_v3';
 const TRAIN_TRIPS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // static schedule data changes daily at most
 
 const VEHICLE_POLL_MS = 15000; // GTFS-RT vehicle positions update ~every 2s server-side, but poll politely
@@ -46,18 +49,20 @@ const STOCKHOLM_CENTER = [59.334, 18.06];
 const BUS_STATION_MIN_ZOOM = 14; // SL has ~10k+ bus stops — only render up close, or the map is unreadable
 
 // Confirmed live from window.DEBUG_LAST_STOP_POINTS: stop_area.type takes
-// exactly these 6 values across the whole SL network.
+// exactly these 6 values across the whole SL network. RAILWSTN is used as
+// a "pendeltag" placeholder until the GTFS-derived override (see above)
+// corrects it — most RAILWSTN stops genuinely are Pendeltåg, so this is a
+// reasonable pre-override guess, not the final answer.
 const STOP_AREA_TYPE_TO_MODE = {
-  RAILWSTN: 'rail',   // Pendeltåg + Roslagsbanan share this at station level —
-                       // splitting them requires route data we don't have per-site
+  RAILWSTN: 'pendeltag',
   METROSTN: 'metro',
-  TRAMSTN: 'tram',
+  TRAMSTN: 'tram',   // includes Roslagsbanan until overridden — see above
   BUSTERM: 'bus',
   SHIPBER: 'boat',
   FERRYBER: 'boat',
 };
 // When a site serves multiple modes (interchange), show the most significant one.
-const MODE_PRIORITY = ['rail', 'metro', 'tram', 'boat', 'bus'];
+const MODE_PRIORITY = ['pendeltag', 'roslagsbanan', 'metro', 'tram', 'boat', 'bus'];
 
 // Vehicle-level modes: pendeltåg/roslagsbanan ARE split here, since we can
 // join trip_id -> route name via static GTFS. metro/tram/bus/boat are
@@ -115,7 +120,10 @@ let resrobotApiKey = localStorage.getItem('trafiklab_resrobot_api_key') || ''; /
 let journeyFrom = null; // { label, lat, lon, extId? } — extId set only when a real stop was picked
 let journeyTo = null;
 let trainTripMap = {};          // trip_id -> mode, from static GTFS
-let stationMarkers = new Map(); // siteId -> { marker, mode }
+let railAreaModeOverride = new Map(); // stop_area id -> 'pendeltag' | 'roslagsbanan', authoritative (from stop_times.txt join)
+let stopPointsCache = null;     // cached /v1/stop-points response, shared between station classification and the override join
+let gidToAreaId = new Map();    // stop-point gid -> stop_area id, used to join GTFS stop_id against SL's site model
+let stationMarkers = new Map(); // siteId -> { marker, mode, site }
 let vehicleMarkers = new Map(); // vehicleId -> Leaflet marker
 let FeedMessageType = null;     // protobufjs decoded type, set once on init
 let vehiclePollTimer = null;
@@ -257,24 +265,26 @@ async function loadStations() {
   }
 }
 
-// A site can serve multiple modes (e.g. T-Centralen: rail + metro). Pick
-// the highest-priority mode present so the marker reflects the more
-// significant service there.
+// A site can serve multiple modes (e.g. T-Centralen: rail + metro). The
+// GTFS-derived override (pendeltag/roslagsbanan, authoritative) is checked
+// first; falls back to the stop_area.type-based guess otherwise.
 function resolveSiteMode(site, areaIdToMode) {
   if (!Array.isArray(site.stop_areas)) return null;
+  for (const areaId of site.stop_areas) {
+    if (railAreaModeOverride.has(areaId)) return railAreaModeOverride.get(areaId);
+  }
   const modesHere = new Set(site.stop_areas.map(id => areaIdToMode.get(id)).filter(Boolean));
   return MODE_PRIORITY.find(m => modesHere.has(m)) || null;
 }
 
 // stop_area.type is confirmed (via window.DEBUG_LAST_STOP_POINTS) to take
 // exactly 6 values covering every mode — see STOP_AREA_TYPE_TO_MODE.
+// Fetches once and caches (stopPointsCache/gidToAreaId) since both station
+// classification and the later GTFS override join need the same data.
 async function loadAreaModeMap() {
   try {
-    const res = await fetch(SL_STOP_POINTS_URL);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const stopPoints = await res.json();
-    window.DEBUG_LAST_STOP_POINTS = stopPoints; // inspect: window.DEBUG_LAST_STOP_POINTS[0]
-    console.log(`[stations] fetched ${stopPoints.length} SL stop points`);
+    const stopPoints = await loadStopPoints();
+    if (!stopPoints) return null;
 
     const map = new Map();
     stopPoints.forEach(sp => {
@@ -289,6 +299,22 @@ async function loadAreaModeMap() {
     console.error('[stations] /stop-points failed, falling back to isTrainSite() guess on /sites', err);
     return null;
   }
+}
+
+async function loadStopPoints() {
+  if (stopPointsCache) return stopPointsCache;
+  const res = await fetch(SL_STOP_POINTS_URL);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const stopPoints = await res.json();
+  window.DEBUG_LAST_STOP_POINTS = stopPoints; // inspect: window.DEBUG_LAST_STOP_POINTS[0]
+  console.log(`[stations] fetched ${stopPoints.length} SL stop points`);
+
+  stopPoints.forEach(sp => {
+    if (sp.gid != null && sp.stop_area) gidToAreaId.set(String(sp.gid), sp.stop_area.id);
+  });
+
+  stopPointsCache = stopPoints;
+  return stopPoints;
 }
 
 // Isolated on purpose — the exact field names in /v1/sites?expand=true
@@ -328,18 +354,15 @@ function addStationMarker(site, mode) {
     .bindTooltip(site.name || 'Station', { direction: 'top', offset: [0, -6] });
 
   marker.on('click', () => openBoard(site));
-  stationMarkers.set(site.id, { marker, mode });
+  stationMarkers.set(site.id, { marker, mode, site });
   updateStationMarkerVisibility(marker, mode);
 }
 
-// Rail/metro/tram/boat stations follow the legend checkboxes only. Bus
-// stops additionally require zoom >= BUS_STATION_MIN_ZOOM — SL has
+// Bus stops additionally require zoom >= BUS_STATION_MIN_ZOOM — SL has
 // thousands of them, so showing them at city-wide zoom would drown
-// everything else out.
+// everything else out. Every other mode just follows its checkbox.
 function updateStationMarkerVisibility(marker, mode) {
-  const modeEnabled = mode === 'rail'
-    ? (activeModes.has('pendeltag') || activeModes.has('roslagsbanan'))
-    : activeModes.has(mode);
+  const modeEnabled = activeModes.has(mode);
   const zoomOk = mode !== 'bus' || map.getZoom() >= BUS_STATION_MIN_ZOOM;
   const shouldShow = modeEnabled && zoomOk;
   const isShown = map.hasLayer(marker);
@@ -511,17 +534,24 @@ async function fetchVehiclePositions() {
 // vehicles are Pendeltåg/Roslagsbanan is to join trip_id against the static
 // GTFS schedule, which does carry real route names.
 //
-// This downloads SL's full static GTFS zip (all modes — buses, metro, tram,
-// boats, trains), extracts just routes.txt + trips.txt, and keeps only the
-// trip_ids belonging to train routes. That's a heavier one-time fetch, so
-// it's cached in localStorage for 24h (static schedules don't change more
-// often than that).
+// This ALSO derives the station-level override (railAreaModeOverride) by
+// joining the same train trip_ids against stop_times.txt, which lists every
+// stop each trip actually calls at — see buildRailAreaOverrides(). This is
+// what corrects Roslagsbanan showing up as "Spårvagn" (its stop_area.type
+// is TRAMSTN, since it's narrow-gauge/light-rail — not a bug in the join,
+// just how SL categorizes the physical infrastructure).
+//
+// Downloads SL's full static GTFS zip (all modes — buses, metro, tram,
+// boats, trains) once, cached in localStorage for 24h (static schedules
+// don't change more often than that).
 // ==========================================================================
 async function loadTrainTripClassification() {
   const cached = readTrainTripCache();
   if (cached) {
-    trainTripMap = cached;
-    console.log(`[gtfs-static] using cached classification (${Object.keys(trainTripMap).length} train trips)`);
+    trainTripMap = cached.tripMap;
+    railAreaModeOverride = new Map(Object.entries(cached.areaOverride).map(([k, v]) => [Number(k), v]));
+    console.log(`[gtfs-static] using cached classification (${Object.keys(trainTripMap).length} trips, ${railAreaModeOverride.size} station areas)`);
+    applyRailOverrides();
     return;
   }
 
@@ -542,25 +572,92 @@ async function loadTrainTripClassification() {
     const routes = Papa.parse(routesCsv, { header: true, skipEmptyLines: true }).data;
     const trips = Papa.parse(tripsCsv, { header: true, skipEmptyLines: true }).data;
 
-    const routeClassification = new Map(); // route_id -> 'pendeltag' | 'roslagsbanan'
+    const routeClassification = new Map(); // route_id -> 'pendeltag' | 'roslagsbanan' | other modes
     routes.forEach(r => {
       const kind = classifyRoute(r);
       if (kind) routeClassification.set(r.route_id, kind);
     });
-    console.log(`[gtfs-static] ${routeClassification.size} train routes found in routes.txt`);
+    console.log(`[gtfs-static] ${routeClassification.size} classified routes found in routes.txt`);
 
     const map = {};
     trips.forEach(t => {
       const kind = routeClassification.get(t.route_id);
       if (kind) map[t.trip_id] = kind;
     });
-    console.log(`[gtfs-static] ${Object.keys(map).length} train trips mapped`);
+    console.log(`[gtfs-static] ${Object.keys(map).length} trips mapped`);
 
     trainTripMap = map;
-    writeTrainTripCache(map);
+
+    // Now derive the station-level override by joining stop_times.txt
+    // against just the pendeltag/roslagsbanan trip_ids from the map above.
+    const stopTimesCsv = await zip.file('stop_times.txt').async('string');
+    await buildRailAreaOverrides(stopTimesCsv, map);
+
+    writeTrainTripCache(map, railAreaModeOverride);
+    applyRailOverrides();
   } catch (err) {
-    console.error('[gtfs-static] failed to load/parse static GTFS — vehicles will show as "other"', err);
+    console.error('[gtfs-static] failed to load/parse static GTFS — vehicles will show as "other", station rail/tram split may be imprecise', err);
   }
+}
+
+// Joins stop_times.txt (trip_id -> stop_id, one row per stop visited) against
+// the already-classified train trips, then converts each GTFS stop_id to
+// its SL stop_area id (via gidToAreaId, built in loadStopPoints()) so it can
+// override station rendering. Only look at pendeltag/roslagsbanan trips —
+// stop_times.txt covers the whole network and is large, so filtering during
+// the parse step keeps memory use down.
+async function buildRailAreaOverrides(stopTimesCsv, tripMap) {
+  await loadStopPoints(); // ensures gidToAreaId is populated
+  if (!gidToAreaId.size) {
+    console.warn('[gtfs-static] gidToAreaId empty — station override will be skipped');
+    return;
+  }
+
+  const relevantTripIds = new Set(
+    Object.entries(tripMap).filter(([, mode]) => mode === 'pendeltag' || mode === 'roslagsbanan').map(([id]) => id)
+  );
+  console.log(`[gtfs-static] joining stop_times.txt against ${relevantTripIds.size} pendeltag/roslagsbanan trips…`);
+
+  const override = new Map();
+  let matchedRows = 0;
+  await new Promise((resolve) => {
+    Papa.parse(stopTimesCsv, {
+      header: true,
+      skipEmptyLines: true,
+      step: (row) => {
+        const r = row.data;
+        if (!relevantTripIds.has(r.trip_id)) return;
+        const areaId = gidToAreaId.get(String(r.stop_id));
+        if (areaId == null) return;
+        override.set(areaId, tripMap[r.trip_id]);
+        matchedRows++;
+      },
+      complete: resolve,
+    });
+  });
+
+  railAreaModeOverride = override;
+  console.log(`[gtfs-static] derived ${override.size} station area overrides from ${matchedRows} matched stop_times rows`);
+}
+
+// Re-styles already-rendered station markers once the authoritative
+// GTFS-derived classification arrives (which can take a few seconds after
+// boot, since it requires downloading and parsing the full static feed).
+function applyRailOverrides() {
+  let updated = 0;
+  for (const [siteId, entry] of stationMarkers) {
+    const { site, mode: currentMode } = entry;
+    let overrideMode = null;
+    for (const areaId of site.stop_areas || []) {
+      if (railAreaModeOverride.has(areaId)) { overrideMode = railAreaModeOverride.get(areaId); break; }
+    }
+    if (overrideMode && overrideMode !== currentMode) {
+      map.removeLayer(entry.marker);
+      addStationMarker(site, overrideMode); // recreates the marker + overwrites this Map entry
+      updated++;
+    }
+  }
+  if (updated) console.log(`[stations] corrected ${updated} station markers using GTFS-derived classification`);
 }
 
 // Isolated for visibility/debugging. Pendeltåg/Roslagsbanan are matched by
@@ -592,17 +689,19 @@ function readTrainTripCache() {
   try {
     const raw = localStorage.getItem(TRAIN_TRIPS_CACHE_KEY);
     if (!raw) return null;
-    const { fetchedAt, map } = JSON.parse(raw);
+    const { fetchedAt, tripMap, areaOverride } = JSON.parse(raw);
     if (Date.now() - fetchedAt > TRAIN_TRIPS_CACHE_MAX_AGE_MS) return null;
-    return map;
+    if (!tripMap || !areaOverride) return null; // stale shape from an older cache version
+    return { tripMap, areaOverride };
   } catch {
     return null;
   }
 }
 
-function writeTrainTripCache(map) {
+function writeTrainTripCache(tripMap, areaOverrideMap) {
   try {
-    localStorage.setItem(TRAIN_TRIPS_CACHE_KEY, JSON.stringify({ fetchedAt: Date.now(), map }));
+    const areaOverride = Object.fromEntries(areaOverrideMap);
+    localStorage.setItem(TRAIN_TRIPS_CACHE_KEY, JSON.stringify({ fetchedAt: Date.now(), tripMap, areaOverride }));
   } catch (err) {
     console.warn('[gtfs-static] could not cache classification (localStorage full?)', err);
   }
@@ -771,9 +870,17 @@ async function fetchSuggestions(query, list, which, input) {
     const data = await res.json();
     window.DEBUG_LAST_LOCATION_SEARCH = data;
 
-    const entries = data && data.stopLocationOrCoordLocation
-      ? data.stopLocationOrCoordLocation.map(e => e.StopLocation).filter(Boolean)
-      : [];
+    // Confirmed live: each entry is EITHER a StopLocation (real transit
+    // stop) OR a CoordLocation with type "ADR" (address). The earlier
+    // version only handled StopLocation and silently dropped every
+    // address — that was the actual bug, not a ResRobot limitation.
+    const entries = (data.stopLocationOrCoordLocation || [])
+      .map(e => {
+        if (e.StopLocation) return { ...e.StopLocation, kind: 'stop' };
+        if (e.CoordLocation) return { ...e.CoordLocation, kind: 'address' };
+        return null;
+      })
+      .filter(Boolean);
 
     list.innerHTML = '';
     if (!entries.length) {
@@ -782,7 +889,7 @@ async function fetchSuggestions(query, list, which, input) {
     }
     entries.slice(0, 8).forEach(entry => {
       const li = document.createElement('li');
-      const isStop = entry.extId != null && !Number.isNaN(Number(entry.extId));
+      const isStop = entry.kind === 'stop';
       li.innerHTML = `<span class="suggestion-type">${isStop ? 'Station' : 'Adress'}</span><span>${escapeHtml(entry.name)}</span>`;
       li.addEventListener('click', () => {
         const picked = { label: entry.name, lat: entry.lat, lon: entry.lon, extId: isStop ? entry.extId : null };
