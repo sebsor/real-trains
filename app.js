@@ -240,8 +240,18 @@ function cleanupStaleLocalStorageKeys() {
 }
 
 function initMap() {
-  map = L.map('map', { zoomControl: true, attributionControl: true })
-    .setView(STOCKHOLM_CENTER, 11);
+  map = L.map('map', {
+    zoomControl: true,
+    attributionControl: true,
+    // Leaflet's smooth zoom uses a CSS transform transition, which can get
+    // interrupted/frozen mid-animation on a page with thousands of marker
+    // DOM elements — confirmed live via the clean per-mode color banding
+    // seen when zoomed all the way out (each mode's markers, created
+    // together in the same batch, froze at a similar wrong position).
+    // Disabling it trades the smooth zoom transition for eliminating that
+    // whole class of bug: zoom now jumps between levels instantly instead.
+    zoomAnimation: false,
+  }).setView(STOCKHOLM_CENTER, 11);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OpenStreetMap &copy; CARTO · Data: Trafiklab / SL',
     subdomains: 'abcd',
