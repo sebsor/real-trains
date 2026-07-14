@@ -162,6 +162,13 @@ body{
    rendering as plain hollow circles instead of their mode color. */
 .leaflet-div-icon{background:transparent;border:none;}
 
+#app-version{
+  position:fixed;bottom:8px;left:8px;z-index:5000;
+  font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);
+  background:rgba(13,17,23,.7);padding:2px 6px;border-radius:4px;
+  pointer-events:none;user-select:none;
+}
+
 /* ---- Start screen ---- */
 #start-screen{
   position:absolute;inset:0;z-index:3000;
