@@ -141,6 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   loadLegendPrefs(); // must run before loadStations() — activeModes affects which markers get created
   syncLegendCheckboxesToState();
+  cleanupStaleLocalStorageKeys();
 
   loadStations();     // works with no API key
 
@@ -228,6 +229,16 @@ function syncLegendCheckboxesToState() {
   });
 }
 
+// The classification cache used to live in localStorage under these keys
+// before moving to IndexedDB (see idbGet/idbSet) — each could hold a ~150k
+// entry JSON blob, likely a real contributor to the quota-exceeded errors
+// seen in testing. Harmless to remove if already gone.
+function cleanupStaleLocalStorageKeys() {
+  ['sl_mode_trips_v1', 'sl_mode_trips_v2', 'sl_mode_trips_v3'].forEach(key => {
+    try { localStorage.removeItem(key); } catch { /* ignore */ }
+  });
+}
+
 function initMap() {
   map = L.map('map', { zoomControl: true, attributionControl: true })
     .setView(STOCKHOLM_CENTER, 11);
@@ -249,29 +260,34 @@ function initMap() {
   // doesn't reliably keep up with zoom changes in this app — markers were
   // found sitting at stale screen positions from a previous zoom level,
   // while map.latLngToContainerPoint() correctly reported where they
-  // SHOULD be. Forcing a hard view reset on every zoomend fixes it
-  // instantly and exactly (verified against multiple markers). This uses
-  // Leaflet's private _resetView because it's the one thing empirically
-  // confirmed to fix the exact observed bug; if a future Leaflet version
-  // removes/renames it, this silently becomes a no-op rather than erroring.
-  // Guarded against re-entrancy because _resetView itself fires
-  // moveend/zoomend, which would otherwise call this handler again.
-  let resettingView = false;
-  map.on('zoomend moveend', () => {
-    if (resettingView) return;
-    resettingView = true;
-    try {
-      map._resetView(map.getCenter(), map.getZoom(), true);
-    } catch (err) {
-      console.warn('[map] _resetView unavailable, positions may drift on zoom', err);
-    } finally {
-      resettingView = false;
-    }
-  });
+  // SHOULD be. Forcing a hard view reset fixes it instantly and exactly
+  // (verified against multiple markers). Wired to zoomend/moveend AND
+  // called directly after applyRailOverrides() — markers recreated there
+  // happen asynchronously, well after page load, and won't get corrected
+  // by a zoom event unless one happens to fire afterward.
+  map.on('zoomend moveend', forceViewResync);
 
   setTimeout(() => map.invalidateSize(), 200);
   window.addEventListener('resize', () => map.invalidateSize());
   window.addEventListener('orientationchange', () => map.invalidateSize());
+}
+
+// This uses Leaflet's private _resetView because it's the one thing
+// empirically confirmed to fix the exact observed drift bug; if a future
+// Leaflet version removes/renames it, this silently becomes a no-op rather
+// than erroring. Guarded against re-entrancy because _resetView itself
+// fires moveend/zoomend, which would otherwise call this function again.
+let resettingView = false;
+function forceViewResync() {
+  if (resettingView || !map) return;
+  resettingView = true;
+  try {
+    map._resetView(map.getCenter(), map.getZoom(), true);
+  } catch (err) {
+    console.warn('[map] _resetView unavailable, positions may drift on zoom', err);
+  } finally {
+    resettingView = false;
+  }
 }
 
 function setStatus(kind, text) {
@@ -612,7 +628,46 @@ async function fetchVehiclePositions() {
 }
 
 // ==========================================================================
-// Train trip classification (static GTFS: trip_id -> route -> mode)
+// Minimal IndexedDB key-value helper
+//
+// The trip classification map now covers every mode (not just trains),
+// which grew it to ~150k entries — confirmed live to exceed localStorage's
+// quota (~5-10MB), causing writeTrainTripCache to silently fail every
+// time and forcing a full static GTFS re-download on every page load.
+// IndexedDB has a much larger quota (typically a share of available disk
+// space), so the cache is stored there instead.
+// ==========================================================================
+const IDB_NAME = 'sparlage-cache';
+const IDB_STORE = 'kv';
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGet(key) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbSet(key, value) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
 //
 // The real-time VehiclePositions feed almost never populates trip.routeId
 // or vehicle.label (confirmed live: 13 of 1065 vehicles had a routeId at
@@ -632,7 +687,7 @@ async function fetchVehiclePositions() {
 // don't change more often than that).
 // ==========================================================================
 async function loadTrainTripClassification() {
-  const cached = readTrainTripCache();
+  const cached = await readTrainTripCache();
   if (cached) {
     trainTripMap = cached.tripMap;
     railAreaModeOverride = new Map(Object.entries(cached.areaOverride).map(([k, v]) => [Number(k), v]));
@@ -679,7 +734,7 @@ async function loadTrainTripClassification() {
     const stopTimesCsv = await zip.file('stop_times.txt').async('string');
     await buildRailAreaOverrides(stopTimesCsv, map);
 
-    writeTrainTripCache(map, railAreaModeOverride);
+    await writeTrainTripCache(map, railAreaModeOverride);
     applyRailOverrides();
   } catch (err) {
     console.error('[gtfs-static] failed to load/parse static GTFS — vehicles will show as "other", station rail/tram split may be imprecise', err);
@@ -743,7 +798,10 @@ function applyRailOverrides() {
       updated++;
     }
   }
-  if (updated) console.log(`[stations] corrected ${updated} station markers using GTFS-derived classification`);
+  if (updated) {
+    console.log(`[stations] corrected ${updated} station markers using GTFS-derived classification`);
+    forceViewResync();
+  }
 }
 
 // Isolated for visibility/debugging. Pendeltåg/Roslagsbanan are matched by
@@ -771,25 +829,26 @@ function classifyRoute(route) {
   }
 }
 
-function readTrainTripCache() {
+async function readTrainTripCache() {
   try {
-    const raw = localStorage.getItem(TRAIN_TRIPS_CACHE_KEY);
-    if (!raw) return null;
-    const { fetchedAt, tripMap, areaOverride } = JSON.parse(raw);
+    const cached = await idbGet(TRAIN_TRIPS_CACHE_KEY);
+    if (!cached) return null;
+    const { fetchedAt, tripMap, areaOverride } = cached;
     if (Date.now() - fetchedAt > TRAIN_TRIPS_CACHE_MAX_AGE_MS) return null;
     if (!tripMap || !areaOverride) return null; // stale shape from an older cache version
     return { tripMap, areaOverride };
-  } catch {
+  } catch (err) {
+    console.warn('[gtfs-static] could not read cached classification', err);
     return null;
   }
 }
 
-function writeTrainTripCache(tripMap, areaOverrideMap) {
+async function writeTrainTripCache(tripMap, areaOverrideMap) {
   try {
     const areaOverride = Object.fromEntries(areaOverrideMap);
-    localStorage.setItem(TRAIN_TRIPS_CACHE_KEY, JSON.stringify({ fetchedAt: Date.now(), tripMap, areaOverride }));
+    await idbSet(TRAIN_TRIPS_CACHE_KEY, { fetchedAt: Date.now(), tripMap, areaOverride });
   } catch (err) {
-    console.warn('[gtfs-static] could not cache classification (localStorage full?)', err);
+    console.warn('[gtfs-static] could not cache classification', err);
   }
 }
 
