@@ -45,7 +45,7 @@ const TRAIN_TRIPS_CACHE_KEY = 'sl_mode_trips_v3';
 const TRAIN_TRIPS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // static schedule data changes daily at most
 const LEGEND_PREFS_KEY = 'sparlage_legend_prefs_v1';
 
-const VEHICLE_POLL_MS = 15000; // GTFS-RT vehicle positions update ~every 2s server-side, but poll politely
+const VEHICLE_POLL_MS = 8000; // SL's feed itself updates ~every 2s server-side; 8s keeps monthly quota comfortable (~7.5 calls/min, Bronze tier caps at 30k/month) while feeling meaningfully smoother than 15s
 const STOCKHOLM_CENTER = [59.334, 18.06];
 const BUS_STATION_MIN_ZOOM = 14; // SL has ~10k+ bus stops — only render up close, or the map is unreadable
 
