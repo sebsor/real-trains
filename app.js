@@ -134,16 +134,32 @@ let vehiclePollTimer = null;
 // Boot
 // ==========================================================================
 document.addEventListener('DOMContentLoaded', () => {
-  initMap();
   wireSetupModal();
-  wireBoard();
   wireJourneyPanel();
+  wireStartScreen();
+  registerServiceWorker();
+});
+
+function wireStartScreen() {
+  document.getElementById('start-map').addEventListener('click', startMapMode);
+  document.getElementById('start-journey').addEventListener('click', startJourneyMode);
+}
+
+// The full, heavier path: map, ~6500 stations, live vehicles, static GTFS
+// classification. Only runs once the person actually chooses it — this is
+// what the loading overlay covers, since it's the slow part.
+async function startMapMode() {
+  document.getElementById('start-screen').setAttribute('hidden', '');
+  document.getElementById('loading-overlay').removeAttribute('hidden');
+  document.getElementById('titlebar').removeAttribute('hidden');
+  document.getElementById('legend').removeAttribute('hidden');
+
+  initMap();
+  wireBoard();
 
   loadLegendPrefs(); // must run before loadStations() — activeModes affects which markers get created
   syncLegendCheckboxesToState();
   cleanupStaleLocalStorageKeys();
-
-  loadStations();     // works with no API key
 
   if (!apiKey || !staticApiKey || !resrobotApiKey) {
     document.getElementById('setup-overlay').removeAttribute('hidden');
@@ -175,8 +191,30 @@ document.addEventListener('DOMContentLoaded', () => {
   map.on('zoomend', refreshAllStationVisibility);
   wireModeCheckboxes();
 
-  registerServiceWorker();
-});
+  await loadStations(); // loading overlay stays up until the initial station markers are placed
+  document.getElementById('loading-overlay').setAttribute('hidden', '');
+}
+
+// The lightweight path: the journey planner needs no map, no station data,
+// and no vehicle polling at all — it's pure ResRobot API calls triggered
+// by typing, so there's nothing to preload and no loading overlay needed.
+function startJourneyMode() {
+  document.getElementById('start-screen').setAttribute('hidden', '');
+
+  const panel = document.getElementById('journey-panel');
+  panel.classList.add('standalone', 'open');
+  panel.setAttribute('aria-hidden', 'false');
+  document.getElementById('journey-back').removeAttribute('hidden');
+  document.getElementById('journey-close').setAttribute('hidden', '');
+  // Reloading is the simplest reliable way back to a clean start screen —
+  // avoids having to hand-unwind map/polling state that was never started
+  // in this path anyway.
+  document.getElementById('journey-back').addEventListener('click', () => location.reload(), { once: true });
+
+  if (!resrobotApiKey) {
+    document.getElementById('setup-overlay').removeAttribute('hidden');
+  }
+}
 
 function wireModeCheckboxes() {
   document.querySelectorAll('.mode-checkbox').forEach(input => {

@@ -15,13 +15,40 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 
+<!-- Start screen: choose map view or journey planner before anything loads -->
+<div id="start-screen">
+  <div id="start-content">
+    <span id="start-logo">◈</span>
+    <h1>Spårläge</h1>
+    <p id="start-subtitle">Vad vill du göra?</p>
+    <div id="start-choices">
+      <button type="button" class="start-choice" id="start-map">
+        <span class="start-choice-icon">🗺️</span>
+        <span class="start-choice-title">Visa kartan</span>
+        <span class="start-choice-desc">Live-positioner för tåg, stationer och avgångar</span>
+      </button>
+      <button type="button" class="start-choice" id="start-journey">
+        <span class="start-choice-icon">🧭</span>
+        <span class="start-choice-title">Res A → B</span>
+        <span class="start-choice-desc">Hitta resor mellan adresser eller stationer</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Loading overlay, shown only while the map path initializes -->
+<div id="loading-overlay" hidden>
+  <div class="spinner"></div>
+  <p id="loading-text">Laddar karta och stationer…</p>
+</div>
+
 <div id="map"></div>
 
-<header id="titlebar">
+<header id="titlebar" hidden>
   <div id="titlebar-main">
     <span id="logo-mark">◈</span>
     <div>
@@ -38,7 +65,7 @@
   </div>
 </header>
 
-<div id="legend">
+<div id="legend" hidden>
   <label class="legend-row legend-master"><input type="checkbox" id="vehicles-toggle" checked><span>Visa fordon (rörliga)</span></label>
   <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="pendeltag"><span class="dot dot-pendeltag"></span> Pendeltåg</label>
   <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="roslagsbanan" checked><span class="dot dot-roslagsbanan"></span> Roslagsbanan</label>
@@ -72,12 +99,15 @@
   </div>
 </aside>
 
-<!-- Journey planner panel, slides in from the left -->
+<!-- Journey planner panel, slides in from the left (or full-screen in standalone mode) -->
 <aside id="journey-panel" aria-hidden="true">
   <div id="journey-header">
-    <div>
-      <p id="journey-eyebrow">RESA</p>
-      <h2>Från A till B</h2>
+    <div id="journey-header-main">
+      <span id="journey-back" title="Tillbaka till start" hidden>←</span>
+      <div>
+        <p id="journey-eyebrow">RESA</p>
+        <h2>Från A till B</h2>
+      </div>
     </div>
     <button id="journey-close" type="button" aria-label="Stäng">✕</button>
   </div>
@@ -135,6 +165,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/protobufjs/8.0.2/protobuf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.5.4/papaparse.min.js"></script>
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>
