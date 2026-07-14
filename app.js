@@ -153,6 +153,7 @@ async function startMapMode() {
   document.getElementById('loading-overlay').removeAttribute('hidden');
   document.getElementById('titlebar').removeAttribute('hidden');
   document.getElementById('legend').removeAttribute('hidden');
+  setLoadingProgress(5, 'Startar kartan…');
 
   initMap();
   wireBoard();
@@ -160,6 +161,7 @@ async function startMapMode() {
   loadLegendPrefs(); // must run before loadStations() — activeModes affects which markers get created
   syncLegendCheckboxesToState();
   cleanupStaleLocalStorageKeys();
+  setLoadingProgress(10, 'Förbereder…');
 
   if (!apiKey || !staticApiKey || !resrobotApiKey) {
     document.getElementById('setup-overlay').removeAttribute('hidden');
@@ -192,7 +194,20 @@ async function startMapMode() {
   wireModeCheckboxes();
 
   await loadStations(); // loading overlay stays up until the initial station markers are placed
-  document.getElementById('loading-overlay').setAttribute('hidden', '');
+  setLoadingProgress(100, 'Klart!');
+  setTimeout(() => document.getElementById('loading-overlay').setAttribute('hidden', ''), 250);
+}
+
+// Drives the progress bar + train on the loading overlay. Called from the
+// actual loading steps below (stop-points fetch, sites fetch, marker
+// placement) so the bar reflects real progress rather than a fake timer.
+function setLoadingProgress(percent, text) {
+  const fill = document.getElementById('loading-fill');
+  const train = document.getElementById('loading-train');
+  const label = document.getElementById('loading-text');
+  if (fill) fill.style.width = `${percent}%`;
+  if (train) train.style.left = `${percent}%`;
+  if (label && text) label.textContent = text;
 }
 
 // The lightweight path: the journey planner needs no map, no station data,
@@ -372,8 +387,10 @@ function wireSetupModal() {
 // ==========================================================================
 async function loadStations() {
   try {
+    setLoadingProgress(15, 'Hämtar hållplatser…');
     const areaIdToMode = await loadAreaModeMap();
 
+    setLoadingProgress(45, 'Hämtar stationer…');
     const res = await fetch(SL_SITES_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const sites = await res.json();
@@ -381,6 +398,7 @@ async function loadStations() {
     window.DEBUG_LAST_SITES = sites; // inspect in console: window.DEBUG_LAST_SITES[0]
     console.log(`[stations] fetched ${sites.length} SL sites total`);
 
+    setLoadingProgress(65, 'Placerar markörer…');
     let placed = 0;
     sites.forEach(site => {
       const mode = areaIdToMode ? resolveSiteMode(site, areaIdToMode) : (isTrainSite(site) ? 'rail' : null);
@@ -389,6 +407,7 @@ async function loadStations() {
       placed++;
     });
     console.log(`[stations] placed ${placed} station markers across all modes`);
+    setLoadingProgress(95, 'Nästan klart…');
   } catch (err) {
     console.error('[stations] failed to load', err);
   }
@@ -432,6 +451,7 @@ async function loadAreaModeMap() {
 
 async function loadStopPoints() {
   if (stopPointsCache) return stopPointsCache;
+  setLoadingProgress(20, 'Hämtar hållplatser…');
   const res = await fetch(SL_STOP_POINTS_URL);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const stopPoints = await res.json();
