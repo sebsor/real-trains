@@ -743,12 +743,13 @@ function renderVehicles(vehicles) {
     const id = (v.vehicle && v.vehicle.id) || (v.trip && v.trip.tripId) || `${v.position.latitude},${v.position.longitude}`;
     seen.add(id);
     const latlng = [v.position.latitude, v.position.longitude];
+    const bearing = v.position.bearing != null ? v.position.bearing : null;
 
     let marker = vehicleMarkers.get(id);
     if (!marker) {
       const icon = L.divIcon({
         className: `train-marker-wrap train-${kind}`,
-        html: '<div class="train-marker-pulse"></div><div class="train-marker-dot"></div>',
+        html: `<div class="train-marker-pulse"></div><div class="train-marker-dot" style="transform:rotate(${bearing ?? 0}deg)"></div>`,
         iconSize: [22, 22],
         iconAnchor: [11, 11],
       });
@@ -756,6 +757,11 @@ function renderVehicles(vehicles) {
       vehicleMarkers.set(id, marker);
     } else {
       marker.setLatLng(latlng);
+      // Update heading in place rather than recreating the whole icon —
+      // cheaper, and avoids restarting the pulse animation every poll.
+      const el = marker.getElement();
+      const dot = el && el.querySelector('.train-marker-dot');
+      if (dot && bearing != null) dot.style.transform = `rotate(${bearing}deg)`;
     }
 
     const label = (v.vehicle && v.vehicle.label) || id;
