@@ -304,45 +304,17 @@ function initMap() {
   // but represents more real-world distance the further you zoom out.
   // Forcing a recalculation after load (and on resize) fixes this class
   // of bug outright.
-  // Confirmed live (via console): Leaflet's own per-marker position sync
-  // doesn't reliably keep up with zoom changes in this app — markers were
-  // found sitting at stale screen positions from a previous zoom level,
-  // while map.latLngToContainerPoint() correctly reported where they
-  // SHOULD be. Forcing a hard view reset fixes it instantly and exactly
-  // (verified against multiple markers). Wired to zoomend/moveend AND
-  // called directly after applyRailOverrides() — markers recreated there
-  // happen asynchronously, well after page load, and won't get corrected
-  // by a zoom event unless one happens to fire afterward.
-  map.on('zoomend moveend', forceViewResync);
+  // Vehicles are recreated fresh every 15s poll anyway (see renderVehicles),
+  // which is the mechanism actually proven to position them correctly —
+  // this just closes the up-to-15s gap after a zoom/pan by re-running that
+  // same recreation immediately, rather than waiting for the next poll.
+  map.on('zoomend moveend', () => {
+    if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
+  });
 
   setTimeout(() => map.invalidateSize(), 200);
   window.addEventListener('resize', () => map.invalidateSize());
   window.addEventListener('orientationchange', () => map.invalidateSize());
-}
-
-// This uses Leaflet's private _resetView because it's the one thing
-// empirically confirmed to fix the exact observed drift bug; if a future
-// Leaflet version removes/renames it, this silently becomes a no-op rather
-// than erroring. Guarded against re-entrancy because _resetView itself
-// fires moveend/zoomend, which would otherwise call this function again.
-let resettingView = false;
-function forceViewResync() {
-  if (resettingView || !map) return;
-  resettingView = true;
-  try {
-    map._resetView(map.getCenter(), map.getZoom(), true);
-    // Vehicles are recreated fresh every 15s poll, which self-corrects any
-    // drift — but that leaves up to a 15s window after a zoom/pan where
-    // they'd stay stale until the next poll happens to fire. Re-running
-    // renderVehicles() here (the same full-recreation path already proven
-    // correct, NOT marker.setLatLng — that's the mechanism we already
-    // suspected of being unreliable and moved away from) closes that gap.
-    if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
-  } catch (err) {
-    console.warn('[map] _resetView unavailable, positions may drift on zoom', err);
-  } finally {
-    resettingView = false;
-  }
 }
 
 function setStatus(kind, text) {
@@ -855,7 +827,6 @@ function applyRailOverrides() {
   }
   if (updated) {
     console.log(`[stations] corrected ${updated} station markers using GTFS-derived classification`);
-    forceViewResync();
   }
 }
 
