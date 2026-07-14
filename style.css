@@ -117,21 +117,29 @@ body{
 .dot-bus{background:var(--bus);}
 .dot-boat{background:var(--boat);}
 .dot-station{background:var(--station);border:1px solid #94a3b8;}
+.legend-master{padding-bottom:8px;border-bottom:1px solid var(--border);font-weight:600;color:var(--text);}
 .legend-toggle{margin-top:4px;padding-top:8px;border-top:1px solid var(--border);}
+
+/* Leaflet bakes a white background + gray border into every divIcon by
+   default (.leaflet-div-icon in leaflet.css) — without this override it
+   bleeds through custom marker styling, which is why stations were
+   rendering as plain hollow circles instead of their mode color. */
+.leaflet-div-icon{background:transparent;border:none;}
 
 /* ---- Map markers ---- */
 .station-marker{
-  width:11px;height:11px;border-radius:50%;
+  width:12px;height:12px;border-radius:50%;
   border:2px solid #0d1117;
-  box-shadow:0 0 0 1px rgba(148,163,184,.5);
+  box-shadow:0 0 0 2px currentColor, 0 0 0 3px rgba(0,0,0,.4);
   cursor:pointer;
 }
-.station-rail{background:var(--pendeltag);}
-.station-metro{background:var(--metro);}
-.station-tram{background:var(--tram);}
-.station-bus{background:var(--bus);}
-.station-boat{background:var(--boat);}
-.station-marker:hover{filter:brightness(1.2);}
+.station-pendeltag{background:var(--pendeltag);color:var(--pendeltag);}
+.station-roslagsbanan{background:var(--roslagsbanan);color:var(--roslagsbanan);}
+.station-metro{background:var(--metro);color:var(--metro);}
+.station-tram{background:var(--tram);color:var(--tram);}
+.station-bus{background:var(--bus);color:var(--bus);}
+.station-boat{background:var(--boat);color:var(--boat);}
+.station-marker:hover{filter:brightness(1.3);transform:scale(1.15);}
 
 .train-marker-wrap{width:22px;height:22px;position:relative;}
 .train-marker-dot{

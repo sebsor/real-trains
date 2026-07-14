@@ -70,6 +70,7 @@ const MODE_PRIORITY = ['pendeltag', 'roslagsbanan', 'metro', 'tram', 'boat', 'bu
 const VEHICLE_MODES = ['pendeltag', 'roslagsbanan', 'metro', 'tram', 'bus', 'boat'];
 
 let activeModes = new Set(VEHICLE_MODES); // controls both vehicle + station visibility
+let vehiclesVisible = true; // master toggle, independent of per-mode filters
 
 // ---- Minimal GTFS-Realtime schema (subset needed for VehiclePositions) ----
 // Transcribed field-for-field from the official spec so the wire format
@@ -154,6 +155,11 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     console.warn('[gtfs-static] no static-data key set — vehicles will show as "other" until one is added');
   }
+
+  document.getElementById('vehicles-toggle').addEventListener('change', (e) => {
+    vehiclesVisible = e.target.checked;
+    if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
+  });
 
   document.getElementById('debug-toggle').addEventListener('change', () => {
     // Force an immediate re-render with the new debug mode
@@ -349,7 +355,7 @@ function addStationMarker(site, mode) {
     console.warn('[stations] no coordinates found for site, skipping', site);
     return;
   }
-  const icon = L.divIcon({ className: `station-marker station-${mode}`, iconSize: [11, 11] });
+  const icon = L.divIcon({ className: `station-marker station-${mode}`, iconSize: [12, 12], iconAnchor: [6, 6] });
   const marker = L.marker(latlng, { icon, keyboard: false })
     .bindTooltip(site.name || 'Station', { direction: 'top', offset: [0, -6] });
 
@@ -716,6 +722,12 @@ function classifyVehicle(v) {
 }
 
 function renderVehicles(vehicles) {
+  if (!vehiclesVisible) {
+    for (const marker of vehicleMarkers.values()) map.removeLayer(marker);
+    vehicleMarkers.clear();
+    return;
+  }
+
   const showUnclassified = document.getElementById('debug-toggle').checked;
   const seen = new Set();
 
@@ -738,6 +750,7 @@ function renderVehicles(vehicles) {
         className: `train-marker-wrap train-${kind}`,
         html: '<div class="train-marker-pulse"></div><div class="train-marker-dot"></div>',
         iconSize: [22, 22],
+        iconAnchor: [11, 11],
       });
       marker = L.marker(latlng, { icon, keyboard: false, zIndexOffset: 500 }).addTo(map);
       vehicleMarkers.set(id, marker);
