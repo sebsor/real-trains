@@ -15,11 +15,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="style.css?v=20">
+<link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
 
-<span id="app-version">v3</span>
+<span id="app-version">v4</span>
 
 <!-- Start screen: choose map view or journey planner before anything loads -->
 <div id="start-screen">
@@ -75,7 +75,10 @@
 
 <!-- Station search, opens from the titlebar magnifier -->
 <div id="station-search-panel" hidden>
-  <input type="text" id="station-search-input" placeholder="Sök station…" autocomplete="off">
+  <div class="input-clear-wrap">
+    <input type="text" id="station-search-input" placeholder="Sök station…" autocomplete="off">
+    <button type="button" class="input-clear-btn" data-target="station-search-input" hidden>✕</button>
+  </div>
   <ul id="station-search-results"></ul>
 </div>
 
@@ -130,7 +133,10 @@
       <div class="journey-field">
         <label for="journey-from">Från</label>
         <div class="journey-input-row">
-          <input type="text" id="journey-from" placeholder="Adress, station eller plats" autocomplete="off">
+          <div class="input-clear-wrap">
+            <input type="text" id="journey-from" placeholder="Adress, station eller plats" autocomplete="off">
+            <button type="button" class="input-clear-btn" data-target="journey-from" hidden>✕</button>
+          </div>
           <button type="button" id="journey-use-location" title="Använd min plats">◉</button>
         </div>
         <ul class="journey-suggestions" id="journey-from-suggestions" hidden></ul>
@@ -139,7 +145,10 @@
       <div class="journey-field">
         <label for="journey-to">Till</label>
         <div class="journey-input-row">
-          <input type="text" id="journey-to" placeholder="Adress, station eller plats" autocomplete="off">
+          <div class="input-clear-wrap">
+            <input type="text" id="journey-to" placeholder="Adress, station eller plats" autocomplete="off">
+            <button type="button" class="input-clear-btn" data-target="journey-to" hidden>✕</button>
+          </div>
         </div>
         <ul class="journey-suggestions" id="journey-to-suggestions" hidden></ul>
       </div>
@@ -179,6 +188,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/protobufjs/8.0.2/protobuf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.5.4/papaparse.min.js"></script>
-<script src="app.js?v=28"></script>
+<script src="app.js?v=29"></script>
 </body>
 </html>

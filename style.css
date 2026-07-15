@@ -113,6 +113,17 @@ body{
 #station-search-results .dot{width:8px;height:8px;border-radius:50%;flex:none;}
 #station-search-empty{padding:14px;color:var(--muted);font-size:12px;text-align:center;}
 
+.input-clear-wrap{position:relative;flex:1;}
+.input-clear-wrap input{width:100%;padding-right:32px;}
+.input-clear-btn{
+  position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  background:none;border:none;color:var(--muted);cursor:pointer;
+  width:22px;height:22px;border-radius:50%;font-size:11px;
+  display:flex;align-items:center;justify-content:center;
+}
+.input-clear-btn:hover{color:var(--text);background:var(--panel);}
+.input-clear-btn[hidden]{display:none;}
+
 #status-pill{
   pointer-events:auto;
   display:flex;align-items:center;gap:8px;

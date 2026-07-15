@@ -260,11 +260,45 @@ function startJourneyMode() {
   document.getElementById('journey-back').addEventListener('click', () => location.reload(), { once: true });
 }
 
+// Generic clear (✕) button for any wrapped text input — shows only when
+// the field has content, clears it, refocuses, and dispatches a real
+// 'input' event so whatever autocomplete/filter logic is already listening
+// reacts naturally (clearing suggestions, resetting journeyFrom/To, etc.)
+// rather than needing bespoke clear logic per field.
+function wireClearableInput(inputId) {
+  const input = document.getElementById(inputId);
+  const btn = document.querySelector(`.input-clear-btn[data-target="${inputId}"]`);
+  if (!input || !btn) return;
+
+  input.addEventListener('input', () => {
+    btn.hidden = input.value.length === 0;
+  });
+  btn.hidden = input.value.length === 0;
+
+  btn.addEventListener('click', () => {
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.focus();
+    btn.hidden = true;
+  });
+}
+
+// Narrow version for cases (like the from/to swap) where the value is set
+// programmatically and journeyFrom/To are already correct — dispatching a
+// full 'input' event there would trigger the autocomplete listener, which
+// treats any input event as "the person is typing" and nulls them out.
+function syncClearButtonVisibility(inputId) {
+  const input = document.getElementById(inputId);
+  const btn = document.querySelector(`.input-clear-btn[data-target="${inputId}"]`);
+  if (input && btn) btn.hidden = input.value.length === 0;
+}
+
 function wireStationSearch() {
   const toggle = document.getElementById('station-search-toggle');
   const panel = document.getElementById('station-search-panel');
   const input = document.getElementById('station-search-input');
   const results = document.getElementById('station-search-results');
+  wireClearableInput('station-search-input');
 
   toggle.addEventListener('click', () => {
     const opening = panel.hasAttribute('hidden');
@@ -1156,11 +1190,17 @@ function wireJourneyPanel() {
 
   wireJourneyAutocomplete('from');
   wireJourneyAutocomplete('to');
+  wireClearableInput('journey-from');
+  wireClearableInput('journey-to');
 
   document.getElementById('journey-swap').addEventListener('click', () => {
     [journeyFrom, journeyTo] = [journeyTo, journeyFrom];
-    document.getElementById('journey-from').value = journeyFrom ? journeyFrom.label : '';
-    document.getElementById('journey-to').value = journeyTo ? journeyTo.label : '';
+    const fromInput = document.getElementById('journey-from');
+    const toInput = document.getElementById('journey-to');
+    fromInput.value = journeyFrom ? journeyFrom.label : '';
+    toInput.value = journeyTo ? journeyTo.label : '';
+    syncClearButtonVisibility('journey-from');
+    syncClearButtonVisibility('journey-to');
   });
 
   document.getElementById('journey-use-location').addEventListener('click', useCurrentLocationAsFrom);
@@ -1186,6 +1226,7 @@ function useCurrentLocationAsFrom() {
         lon: pos.coords.longitude,
       };
       document.getElementById('journey-from').value = journeyFrom.label;
+      syncClearButtonVisibility('journey-from');
     },
     (err) => {
       console.error('[journey] geolocation failed', err);
@@ -1258,6 +1299,7 @@ async function fetchSuggestions(query, list, which, input) {
         if (which === 'from') journeyFrom = picked; else journeyTo = picked;
         input.value = entry.name;
         list.hidden = true;
+        syncClearButtonVisibility(input.id);
       });
       list.appendChild(li);
     });
