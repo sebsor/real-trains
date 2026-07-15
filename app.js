@@ -1435,6 +1435,7 @@ function renderTripCard(trip) {
   const mapContainer = document.createElement('div');
   mapContainer.className = 'trip-map-container';
   mapPane.appendChild(mapContainer);
+  mapPane.appendChild(renderTripMapLegend(legs));
   detail.appendChild(mapPane);
 
   card.appendChild(detail);
@@ -1570,6 +1571,33 @@ function renderWalkLeg(leg) {
 // trip response doesn't include a shape/polyline, only stop coordinates),
 // so curves in the real line won't show — flagged here rather than
 // silently presented as more precise than it is.
+const MODE_LABELS_SV = {
+  pendeltag: 'Pendeltåg', roslagsbanan: 'Roslagsbanan', metro: 'Tunnelbana',
+  tram: 'Spårvagn', bus: 'Buss', boat: 'Båt',
+};
+
+// Only lists the modes actually present in this specific trip, rather than
+// a full 6-mode legend every time — more relevant for a 2-3 leg journey.
+function renderTripMapLegend(legs) {
+  const modesUsed = new Set();
+  let hasWalk = false;
+  legs.forEach(leg => {
+    if (leg.type === 'WALK' || leg.type === 'TRSF') { hasWalk = true; return; }
+    const catCode = leg.Product && leg.Product[0] && leg.Product[0].catCode;
+    modesUsed.add(CAT_CODE_TO_MODE[catCode] || 'pendeltag');
+  });
+
+  const legend = document.createElement('div');
+  legend.className = 'trip-map-legend';
+  let html = '';
+  modesUsed.forEach(mode => {
+    html += `<span class="journey-legend-item"><span class="dot dot-${mode}"></span>${MODE_LABELS_SV[mode] || mode}</span>`;
+  });
+  if (hasWalk) html += `<span class="journey-legend-item"><span class="dot dot-walk"></span>Gång</span>`;
+  legend.innerHTML = html;
+  return legend;
+}
+
 function renderTripMap(container, legs) {
   const map = L.map(container, { zoomControl: true, attributionControl: false })
     .setView(STOCKHOLM_CENTER, 12);

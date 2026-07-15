@@ -163,6 +163,17 @@ body{
 .dot-tram{background:var(--tram);}
 .dot-bus{background:var(--bus);}
 .dot-boat{background:var(--boat);}
+.dot-walk{background:#7d8590;}
+
+#journey-legend{
+  display:flex;flex-wrap:wrap;gap:8px 14px;
+  padding:10px 2px 14px;margin-bottom:4px;border-bottom:1px solid var(--border);
+}
+.journey-legend-item{
+  display:flex;align-items:center;gap:5px;
+  font-size:11px;color:var(--muted);font-family:'Space Grotesk',system-ui,sans-serif;
+}
+.journey-legend-item .dot{width:8px;height:8px;}
 .dot-station{background:var(--station);border:1px solid #94a3b8;}
 .legend-master{padding-bottom:8px;border-bottom:1px solid var(--border);font-weight:600;color:var(--text);}
 .legend-toggle{margin-top:4px;padding-top:8px;border-top:1px solid var(--border);}
@@ -547,6 +558,9 @@ body{
 .trip-map-empty{
   padding:20px;text-align:center;color:var(--muted);font-size:12px;
   font-family:'JetBrains Mono',monospace;
+}
+.trip-map-legend{
+  display:flex;flex-wrap:wrap;gap:6px 12px;padding-top:10px;
 }
 
 @media (max-width:640px){

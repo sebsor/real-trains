@@ -15,11 +15,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="style.css?v=21">
+<link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
 
-<span id="app-version">v4</span>
+<span id="app-version">v5</span>
 
 <!-- Start screen: choose map view or journey planner before anything loads -->
 <div id="start-screen">
@@ -154,6 +154,15 @@
       </div>
       <button type="submit" id="journey-submit" class="btn-primary">Sök resor</button>
     </form>
+    <div id="journey-legend">
+      <span class="journey-legend-item"><span class="dot dot-pendeltag"></span>Pendeltåg</span>
+      <span class="journey-legend-item"><span class="dot dot-roslagsbanan"></span>Roslagsbanan</span>
+      <span class="journey-legend-item"><span class="dot dot-metro"></span>Tunnelbana</span>
+      <span class="journey-legend-item"><span class="dot dot-tram"></span>Spårvagn</span>
+      <span class="journey-legend-item"><span class="dot dot-bus"></span>Buss</span>
+      <span class="journey-legend-item"><span class="dot dot-boat"></span>Båt</span>
+      <span class="journey-legend-item"><span class="dot dot-walk"></span>Gång</span>
+    </div>
     <div id="journey-results"></div>
   </div>
 </aside>
@@ -188,6 +197,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/protobufjs/8.0.2/protobuf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.5.4/papaparse.min.js"></script>
-<script src="app.js?v=29"></script>
+<script src="app.js?v=30"></script>
 </body>
 </html>
