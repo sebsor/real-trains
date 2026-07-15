@@ -15,11 +15,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="style.css?v=24">
+<link rel="stylesheet" href="style.css?v=25">
 </head>
 <body>
 
-<span id="app-version">v7</span>
+<span id="app-version">v8</span>
 
 <!-- Start screen: choose map view or journey planner before anything loads -->
 <div id="start-screen">
@@ -64,6 +64,7 @@
     </div>
   </div>
   <div id="titlebar-actions">
+    <button id="alerts-toggle" type="button" title="Trafikläge">⚠<span class="alerts-count"></span></button>
     <button id="station-search-toggle" type="button" title="Sök station">🔍</button>
     <button id="journey-toggle" type="button">Res A→B</button>
     <button id="status-pill" type="button" title="Anslutningsstatus — klicka för detaljer">
@@ -73,12 +74,19 @@
   </div>
 </header>
 
+<!-- Trafikläge (service alerts), opens from the titlebar warning icon -->
+<div id="alerts-panel" hidden>
+  <p id="alerts-panel-title">Trafikläge</p>
+  <div id="alerts-list"></div>
+</div>
+
 <!-- Station search, opens from the titlebar magnifier -->
 <div id="station-search-panel" hidden>
   <div class="input-clear-wrap">
     <input type="text" id="station-search-input" placeholder="Sök station…" autocomplete="off">
     <button type="button" class="input-clear-btn" data-target="station-search-input" hidden>✕</button>
   </div>
+  <button type="button" id="nearest-station-btn">📍 Närmaste station</button>
   <ul id="station-search-results"></ul>
 </div>
 
@@ -156,6 +164,18 @@
         </div>
         <ul class="journey-suggestions" id="journey-to-suggestions" hidden></ul>
       </div>
+      <div class="journey-field journey-time-field">
+        <label for="journey-time-mode">När</label>
+        <div class="journey-time-row">
+          <select id="journey-time-mode">
+            <option value="now">Nu</option>
+            <option value="depart">Avgår kl.</option>
+            <option value="arrive">Anländer kl.</option>
+          </select>
+          <input type="time" id="journey-time-value" hidden>
+          <input type="date" id="journey-date-value" hidden>
+        </div>
+      </div>
       <div class="journey-submit-row">
         <button type="submit" id="journey-submit" class="btn-primary">Sök resor</button>
         <button type="button" id="journey-save-route" title="Spara den här resan">☆</button>
@@ -204,6 +224,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/protobufjs/8.0.2/protobuf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.5.4/papaparse.min.js"></script>
-<script src="app.js?v=32"></script>
+<script src="app.js?v=33"></script>
 </body>
 </html>

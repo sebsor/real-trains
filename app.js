@@ -31,6 +31,8 @@ const SL_SITES_URL = 'https://transport.integration.sl.se/v1/sites?expand=true';
 const SL_STOP_POINTS_URL = 'https://transport.integration.sl.se/v1/stop-points';
 const SL_DEPARTURES_URL = (siteId) => `https://transport.integration.sl.se/v1/sites/${siteId}/departures`;
 const GTFS_RT_URL = (key) => `https://opendata.samtrafiken.se/gtfs-rt/sl/VehiclePositions.pb?key=${key}`;
+const SERVICE_ALERTS_URL = (key) => `https://opendata.samtrafiken.se/gtfs-rt/sl/ServiceAlerts.pb?key=${key}`;
+const ALERTS_POLL_MS = 60000; // alerts change far less often than positions — poll gently
 const GTFS_STATIC_URL = (key) => `https://opendata.samtrafiken.se/gtfs/sl/sl.zip?key=${key}`; // uses staticApiKey, not apiKey
 const RESROBOT_LOCATION_URL = (query, key) =>
   `https://api.resrobot.se/v2.1/location.name?input=${encodeURIComponent(query)}&type=SA&format=json&accessId=${key}`;
@@ -91,6 +93,30 @@ message FeedHeader {
 message FeedEntity {
   required string id = 1;
   optional VehiclePosition vehicle = 4;
+  optional Alert alert = 5;
+}
+message Alert {
+  repeated TimeRange active_period = 1;
+  repeated EntitySelector informed_entity = 5;
+  optional TranslatedString header_text = 10;
+  optional TranslatedString description_text = 11;
+}
+message TimeRange {
+  optional uint64 start = 1;
+  optional uint64 end = 2;
+}
+message EntitySelector {
+  optional string agency_id = 1;
+  optional string route_id = 2;
+  optional TripDescriptor trip = 4;
+  optional string stop_id = 5;
+}
+message TranslatedString {
+  message Translation {
+    required string text = 1;
+    optional string language = 2;
+  }
+  repeated Translation translation = 1;
 }
 message VehiclePosition {
   optional TripDescriptor trip = 1;
@@ -221,9 +247,14 @@ async function startMapMode() {
     if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
   });
 
+  if (apiKey) {
+    startAlertsPolling();
+  }
+
   map.on('zoomend', refreshAllStationVisibility);
   wireModeCheckboxes();
   wireStationSearch();
+  wireAlertsPanel();
 
   await loadStations(); // loading overlay stays up until the initial station markers are placed
   setLoadingProgress(100, 'Klart!');
@@ -298,6 +329,7 @@ function wireStationSearch() {
   const panel = document.getElementById('station-search-panel');
   const input = document.getElementById('station-search-input');
   const results = document.getElementById('station-search-results');
+  const nearestBtn = document.getElementById('nearest-station-btn');
   wireClearableInput('station-search-input');
 
   toggle.addEventListener('click', () => {
@@ -334,20 +366,62 @@ function wireStationSearch() {
       results.innerHTML = '<li id="station-search-empty">Inga stationer hittades</li>';
       return;
     }
-
-    matches.forEach(({ site, mode }) => {
-      const li = document.createElement('li');
-      li.innerHTML = `<span class="dot dot-${mode}"></span><span>${escapeHtml(site.name || 'Station')}</span>`;
-      li.addEventListener('click', () => {
-        const latlng = getSiteLatLng(site);
-        if (latlng) map.setView(latlng, 15);
-        openBoard(site);
-        panel.setAttribute('hidden', '');
-        toggle.classList.remove('active');
-      });
-      results.appendChild(li);
-    });
+    matches.forEach(({ site, mode }) => renderStationResultItem(results, site, mode));
   });
+
+  nearestBtn.addEventListener('click', () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation stöds inte i den här webbläsaren.');
+      return;
+    }
+    results.innerHTML = '<li id="station-search-empty">Hämtar din plats…</li>';
+    input.value = '';
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        const withDistance = [...stationMarkers.values()].map(({ site, mode }) => ({
+          site, mode, dist: haversineMeters(latitude, longitude, site.lat, site.lon),
+        }));
+        withDistance.sort((a, b) => a.dist - b.dist);
+
+        results.innerHTML = '';
+        withDistance.slice(0, 10).forEach(({ site, mode, dist }) =>
+          renderStationResultItem(results, site, mode, dist));
+      },
+      (err) => {
+        console.error('[stations] geolocation failed', err);
+        results.innerHTML = '<li id="station-search-empty">Kunde inte hämta din plats.</li>';
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  });
+}
+
+function renderStationResultItem(container, site, mode, distanceMeters) {
+  const li = document.createElement('li');
+  const distLabel = distanceMeters != null
+    ? `<span class="station-result-dist">${distanceMeters < 1000 ? `${Math.round(distanceMeters)} m` : `${(distanceMeters / 1000).toFixed(1)} km`}</span>`
+    : '';
+  li.innerHTML = `<span class="dot dot-${mode}"></span><span>${escapeHtml(site.name || 'Station')}</span>${distLabel}`;
+  li.addEventListener('click', () => {
+    const latlng = getSiteLatLng(site);
+    if (latlng) map.setView(latlng, 15);
+    openBoard(site);
+    document.getElementById('station-search-panel').setAttribute('hidden', '');
+    document.getElementById('station-search-toggle').classList.remove('active');
+  });
+  container.appendChild(li);
+}
+
+// Straight-line distance in meters between two lat/lon points (haversine).
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = deg => deg * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function wireModeCheckboxes() {
@@ -689,7 +763,14 @@ function closeBoard() {
   const board = document.getElementById('board');
   board.classList.remove('open');
   board.setAttribute('aria-hidden', 'true');
+  if (departureCountdownTimer) {
+    clearInterval(departureCountdownTimer);
+    departureCountdownTimer = null;
+  }
 }
+
+let departureCountdownTimer = null;
+let selectedDepartureRow = null;
 
 async function loadDepartures(site) {
   const empty = document.getElementById('board-empty');
@@ -699,6 +780,8 @@ async function loadDepartures(site) {
   empty.textContent = 'Hämtar avgångar…';
   table.hidden = true;
   rows.innerHTML = '';
+  selectedDepartureRow = null;
+  if (departureCountdownTimer) clearInterval(departureCountdownTimer);
 
   try {
     const res = await fetch(SL_DEPARTURES_URL(site.id));
@@ -720,10 +803,21 @@ async function loadDepartures(site) {
 
     empty.hidden = true;
     table.hidden = false;
+
+    // Live countdown while the board is open — re-derives each label from
+    // the stored absolute time rather than just decrementing a number, so
+    // it stays correct even if the tab was backgrounded for a while.
+    departureCountdownTimer = setInterval(updateDepartureCountdowns, 15000);
   } catch (err) {
     console.error('[departures] failed', err);
     empty.textContent = 'Kunde inte hämta avgångar (se konsolen för detaljer).';
   }
+}
+
+function updateDepartureCountdowns() {
+  document.querySelectorAll('#board-rows .dep-time[data-time]').forEach(el => {
+    el.textContent = formatDepartureTime(el.dataset.time);
+  });
 }
 
 // Isolated for the same reason as other schema-guess functions — adjust
@@ -756,7 +850,7 @@ function renderDepartureRow(dep) {
   tr.innerHTML = `
     <td><span class="dep-line">${escapeHtml(dep.line)}</span></td>
     <td>${escapeHtml(dep.destination)}</td>
-    <td class="dep-time ${dep.deviation ? 'deviation' : ''}">${timeLabel}</td>
+    <td class="dep-time ${dep.deviation ? 'deviation' : ''}" data-time="${escapeHtml(dep.time || '')}">${timeLabel}</td>
   `;
 
   const detailTr = document.createElement('tr');
@@ -774,6 +868,16 @@ function renderDepartureRow(dep) {
   detailTr.innerHTML = `<td colspan="3"><div class="dep-detail">${detailParts.join('')}</div></td>`;
 
   tr.addEventListener('click', () => {
+    // Selection highlight — separate from expand/collapse, and persists
+    // even if the row is collapsed again (only reset by picking another
+    // row or reloading the board), so it's clear which departure you're
+    // tracking at a glance.
+    if (selectedDepartureRow && selectedDepartureRow !== tr) {
+      selectedDepartureRow.classList.remove('selected');
+    }
+    tr.classList.add('selected');
+    selectedDepartureRow = tr;
+
     detailTr.hidden = !detailTr.hidden;
     tr.classList.toggle('expanded', !detailTr.hidden);
   });
@@ -827,6 +931,114 @@ function stopVehiclePolling() {
     vehiclePollTimer = null;
   }
   setStatus('', 'Fordon pausade');
+}
+
+// ==========================================================================
+// Trafikläge (Service Alerts) — separate GTFS-RT feed, same key as
+// VehiclePositions. Not filtered by route/mode: SL's alert entities don't
+// reliably carry a matching route_id we could join against our own
+// classification, so this shows everything currently active rather than
+// silently hiding alerts that might actually be relevant.
+// ==========================================================================
+let alertsPollTimer = null;
+let activeAlerts = [];
+
+function startAlertsPolling() {
+  if (!FeedMessageType) {
+    if (!window.protobuf) {
+      console.error('[alerts] protobufjs missing, cannot decode alerts');
+      return;
+    }
+    const root = protobuf.parse(GTFS_RT_PROTO).root;
+    FeedMessageType = root.lookupType('transit_realtime.FeedMessage');
+  }
+  fetchServiceAlerts();
+  if (alertsPollTimer) clearInterval(alertsPollTimer);
+  alertsPollTimer = setInterval(fetchServiceAlerts, ALERTS_POLL_MS);
+}
+
+async function fetchServiceAlerts() {
+  try {
+    const res = await fetch(SERVICE_ALERTS_URL(apiKey));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const buf = new Uint8Array(await res.arrayBuffer());
+    const message = FeedMessageType.decode(buf);
+    const obj = FeedMessageType.toObject(message, { defaults: true });
+
+    const nowSec = Date.now() / 1000;
+    activeAlerts = (obj.entity || [])
+      .map(e => e.alert)
+      .filter(Boolean)
+      .filter(a => {
+        // No active_period entries means "always active" per the GTFS-RT spec.
+        if (!a.activePeriod || !a.activePeriod.length) return true;
+        return a.activePeriod.some(p =>
+          (!p.start || Number(p.start) <= nowSec) && (!p.end || Number(p.end) >= nowSec));
+      })
+      .map(a => ({
+        header: firstTranslation(a.headerText),
+        description: firstTranslation(a.descriptionText),
+      }))
+      .filter(a => a.header);
+
+    window.DEBUG_LAST_ALERTS = activeAlerts;
+    renderAlertsBadge();
+  } catch (err) {
+    console.error('[alerts] fetch failed', err);
+  }
+}
+
+function firstTranslation(translatedString) {
+  const t = translatedString && translatedString.translation;
+  if (!t || !t.length) return '';
+  return (t.find(x => x.language === 'sv') || t[0]).text || '';
+}
+
+function renderAlertsBadge() {
+  const btn = document.getElementById('alerts-toggle');
+  if (!btn) return;
+  const count = activeAlerts.length;
+  btn.querySelector('.alerts-count').textContent = count > 0 ? count : '';
+  btn.classList.toggle('has-alerts', count > 0);
+}
+
+function wireAlertsPanel() {
+  const toggle = document.getElementById('alerts-toggle');
+  const panel = document.getElementById('alerts-panel');
+
+  toggle.addEventListener('click', () => {
+    const opening = panel.hasAttribute('hidden');
+    if (opening) {
+      renderAlertsList();
+      panel.removeAttribute('hidden');
+    } else {
+      panel.setAttribute('hidden', '');
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!panel.hasAttribute('hidden') && !panel.contains(e.target) && e.target !== toggle && !toggle.contains(e.target)) {
+      panel.setAttribute('hidden', '');
+    }
+  });
+}
+
+function renderAlertsList() {
+  const list = document.getElementById('alerts-list');
+  list.innerHTML = '';
+  if (!activeAlerts.length) {
+    list.innerHTML = '<p class="alerts-empty">Inga aktiva trafikstörningar just nu.</p>';
+    return;
+  }
+  activeAlerts.forEach(alert => {
+    const item = document.createElement('div');
+    item.className = 'alert-item';
+    item.innerHTML = `
+      <p class="alert-header">⚠ ${escapeHtml(alert.header)}</p>
+      ${alert.description ? `<p class="alert-desc">${escapeHtml(alert.description)}</p>` : ''}
+    `;
+    list.appendChild(item);
+  });
 }
 
 async function fetchVehiclePositions() {
@@ -1212,6 +1424,20 @@ function wireJourneyPanel() {
 
   wireSavedRoutes();
   renderSavedRoutes();
+
+  const timeMode = document.getElementById('journey-time-mode');
+  const timeValue = document.getElementById('journey-time-value');
+  const dateValue = document.getElementById('journey-date-value');
+  timeMode.addEventListener('change', () => {
+    const showTime = timeMode.value !== 'now';
+    timeValue.hidden = !showTime;
+    dateValue.hidden = !showTime;
+    if (showTime && !timeValue.value) {
+      const now = new Date();
+      timeValue.value = now.toTimeString().slice(0, 5);
+      dateValue.value = now.toISOString().slice(0, 10);
+    }
+  });
 }
 
 // ==========================================================================
@@ -1429,6 +1655,15 @@ async function searchTrips() {
     params.destCoordLat = journeyTo.lat;
     params.destCoordLong = journeyTo.lon;
     params.destWalk = '1,0,1500';
+  }
+
+  const timeMode = document.getElementById('journey-time-mode').value;
+  if (timeMode !== 'now') {
+    const time = document.getElementById('journey-time-value').value;
+    const date = document.getElementById('journey-date-value').value;
+    if (time) params.time = time;
+    if (date) params.date = date;
+    if (timeMode === 'arrive') params.searchForArrival = 1;
   }
 
   try {
