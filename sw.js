@@ -1,5 +1,5 @@
 const CACHE = 'sparlage-v2';
-const SHELL = ['./', './index.html', './style.css?v=23', './app.js?v=31', './manifest.json', './icon.svg'];
+const SHELL = ['./', './index.html', './style.css?v=24', './app.js?v=32', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));

@@ -15,11 +15,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="style.css?v=23">
+<link rel="stylesheet" href="style.css?v=24">
 </head>
 <body>
 
-<span id="app-version">v6</span>
+<span id="app-version">v7</span>
 
 <!-- Start screen: choose map view or journey planner before anything loads -->
 <div id="start-screen">
@@ -129,6 +129,10 @@
     <button id="journey-close" type="button" aria-label="Stäng">✕</button>
   </div>
   <div id="journey-body">
+    <div id="saved-routes" hidden>
+      <p id="saved-routes-label">SPARADE RESOR</p>
+      <div id="saved-routes-list"></div>
+    </div>
     <form id="journey-form">
       <div class="journey-field">
         <label for="journey-from">Från</label>
@@ -152,7 +156,10 @@
         </div>
         <ul class="journey-suggestions" id="journey-to-suggestions" hidden></ul>
       </div>
-      <button type="submit" id="journey-submit" class="btn-primary">Sök resor</button>
+      <div class="journey-submit-row">
+        <button type="submit" id="journey-submit" class="btn-primary">Sök resor</button>
+        <button type="button" id="journey-save-route" title="Spara den här resan">☆</button>
+      </div>
     </form>
     <div id="journey-legend">
       <span class="journey-legend-item"><span class="dot dot-pendeltag"></span>Pendeltåg</span>
@@ -197,6 +204,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/protobufjs/8.0.2/protobuf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.5.4/papaparse.min.js"></script>
-<script src="app.js?v=31"></script>
+<script src="app.js?v=32"></script>
 </body>
 </html>

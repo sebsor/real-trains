@@ -1209,6 +1209,93 @@ function wireJourneyPanel() {
     e.preventDefault();
     searchTrips();
   });
+
+  wireSavedRoutes();
+  renderSavedRoutes();
+}
+
+// ==========================================================================
+// Saved routes — persisted From/To pairs for one-tap re-search
+// ==========================================================================
+const SAVED_ROUTES_KEY = 'sparlage_saved_routes';
+
+function loadSavedRoutes() {
+  try {
+    return JSON.parse(localStorage.getItem(SAVED_ROUTES_KEY)) || [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedRoutes(routes) {
+  try {
+    localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(routes));
+  } catch (err) {
+    console.warn('[saved-routes] could not save (localStorage full?)', err);
+  }
+}
+
+function wireSavedRoutes() {
+  document.getElementById('journey-save-route').addEventListener('click', () => {
+    if (!journeyFrom || !journeyTo) {
+      alert('Välj både en start- och slutpunkt innan du sparar resan.');
+      return;
+    }
+    const routes = loadSavedRoutes();
+    const isDuplicate = routes.some(r =>
+      r.from.label === journeyFrom.label && r.to.label === journeyTo.label);
+    if (isDuplicate) {
+      alert('Den här resan är redan sparad.');
+      return;
+    }
+    routes.push({ id: Date.now(), from: journeyFrom, to: journeyTo });
+    writeSavedRoutes(routes);
+    renderSavedRoutes();
+
+    const btn = document.getElementById('journey-save-route');
+    btn.textContent = '★';
+    btn.classList.add('saved');
+    setTimeout(() => { btn.textContent = '☆'; btn.classList.remove('saved'); }, 1200);
+  });
+}
+
+function renderSavedRoutes() {
+  const section = document.getElementById('saved-routes');
+  const list = document.getElementById('saved-routes-list');
+  const routes = loadSavedRoutes();
+
+  if (!routes.length) {
+    section.setAttribute('hidden', '');
+    return;
+  }
+  section.removeAttribute('hidden');
+  list.innerHTML = '';
+
+  routes.forEach(route => {
+    const row = document.createElement('div');
+    row.className = 'saved-route';
+    row.innerHTML = `
+      <span class="saved-route-text">${escapeHtml(route.from.label)} → ${escapeHtml(route.to.label)}</span>
+      <button type="button" class="saved-route-remove" aria-label="Ta bort">✕</button>
+    `;
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.saved-route-remove')) return; // handled separately below
+      journeyFrom = route.from;
+      journeyTo = route.to;
+      document.getElementById('journey-from').value = route.from.label;
+      document.getElementById('journey-to').value = route.to.label;
+      syncClearButtonVisibility('journey-from');
+      syncClearButtonVisibility('journey-to');
+      searchTrips();
+    });
+    row.querySelector('.saved-route-remove').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const updated = loadSavedRoutes().filter(r => r.id !== route.id);
+      writeSavedRoutes(updated);
+      renderSavedRoutes();
+    });
+    list.appendChild(row);
+  });
 }
 
 function useCurrentLocationAsFrom() {
