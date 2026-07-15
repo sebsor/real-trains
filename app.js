@@ -148,6 +148,8 @@ let resrobotApiKey = localStorage.getItem('trafiklab_resrobot_api_key') || ''; /
 let journeyFrom = null; // { label, lat, lon, extId? } — extId set only when a real stop was picked
 let journeyTo = null;
 let trainTripMap = {};          // trip_id -> mode, from static GTFS
+let routeIdToMode = {};         // route_id -> mode, from static GTFS — used to group alerts by vehicle type
+let loadTrainTripClassificationPromise = null; // shared, so map mode doesn't re-trigger a second fetch of the same data
 let railAreaModeOverride = new Map(); // stop_area id -> 'pendeltag' | 'roslagsbanan', authoritative (from stop_times.txt join)
 let stopPointsCache = null;     // cached /v1/stop-points response, shared between station classification and the override join
 let gidToAreaId = new Map();    // stop-point gid -> stop_area id, used to join GTFS stop_id against SL's site model
@@ -164,6 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireSetupModal();
   wireJourneyPanel();
   wireStartScreen();
+  wireAlertsPanel();
   registerServiceWorker();
 
   // Shown once, up front, only if at least one key hasn't been set yet —
@@ -176,6 +179,16 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     setupOverlay.setAttribute('hidden', '');
   }
+
+  // Trafikläge doesn't depend on which flow (map or journey) is chosen —
+  // both buttons exist in the DOM from the start, so start polling here
+  // rather than duplicating this in both startMapMode() and startJourneyMode().
+  if (apiKey) startAlertsPolling();
+
+  // routeIdToMode (used to group alerts by vehicle type) comes from this
+  // same static GTFS parse — needed even in journey-only mode, where
+  // startMapMode() (which used to be the only place this ran) never fires.
+  if (staticApiKey) loadTrainTripClassificationPromise = loadTrainTripClassification();
 });
 
 // Confirms whether localStorage actually persists in this browsing
@@ -223,12 +236,17 @@ async function startMapMode() {
   } else {
     setStatus('', 'Fordon avstängda');
   }
-  if (staticApiKey) {
-    loadTrainTripClassification().then(() => {
+  if (!staticApiKey) {
+    console.warn('[gtfs-static] no static-data key set — vehicles will show as "other" until one is added');
+  } else {
+    // Re-render once classification (kicked off at boot, or started here if
+    // the key wasn't available yet at boot time) resolves, in case vehicles
+    // started polling before it finished. Reuses the same in-flight promise
+    // rather than triggering a second fetch of the static GTFS zip.
+    if (!loadTrainTripClassificationPromise) loadTrainTripClassificationPromise = loadTrainTripClassification();
+    loadTrainTripClassificationPromise.then(() => {
       if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
     });
-  } else {
-    console.warn('[gtfs-static] no static-data key set — vehicles will show as "other" until one is added');
   }
 
   document.getElementById('vehicles-toggle').addEventListener('change', (e) => {
@@ -247,14 +265,9 @@ async function startMapMode() {
     if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
   });
 
-  if (apiKey) {
-    startAlertsPolling();
-  }
-
   map.on('zoomend', refreshAllStationVisibility);
   wireModeCheckboxes();
   wireStationSearch();
-  wireAlertsPanel();
 
   await loadStations(); // loading overlay stays up until the initial station markers are placed
   setLoadingProgress(100, 'Klart!');
@@ -568,7 +581,8 @@ function wireSetupModal() {
     if (staticVal) {
       staticApiKey = staticVal;
       persist('trafiklab_static_api_key', staticApiKey);
-      loadTrainTripClassification().then(() => {
+      loadTrainTripClassificationPromise = loadTrainTripClassification();
+      loadTrainTripClassificationPromise.then(() => {
         if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
       });
     }
@@ -978,6 +992,7 @@ async function fetchServiceAlerts() {
       .map(a => ({
         header: firstTranslation(a.headerText),
         description: firstTranslation(a.descriptionText),
+        modes: resolveAlertModes(a.informedEntity),
       }))
       .filter(a => a.header);
 
@@ -994,30 +1009,47 @@ function firstTranslation(translatedString) {
   return (t.find(x => x.language === 'sv') || t[0]).text || '';
 }
 
+// Resolves which mode(s) an alert affects, via informed_entity.route_id
+// joined against routeIdToMode (built during static GTFS parsing). An
+// alert can list multiple informed entities (e.g. affects several routes);
+// returns the set of distinct modes found. Empty set if nothing resolves —
+// those alerts go in an "Övrigt" bucket rather than being silently hidden.
+function resolveAlertModes(informedEntity) {
+  if (!Array.isArray(informedEntity)) return [];
+  const modes = new Set();
+  informedEntity.forEach(e => {
+    if (e.routeId && routeIdToMode[e.routeId]) modes.add(routeIdToMode[e.routeId]);
+  });
+  return [...modes];
+}
+
 function renderAlertsBadge() {
-  const btn = document.getElementById('alerts-toggle');
-  if (!btn) return;
   const count = activeAlerts.length;
-  btn.querySelector('.alerts-count').textContent = count > 0 ? count : '';
-  btn.classList.toggle('has-alerts', count > 0);
+  document.querySelectorAll('.alerts-toggle-btn').forEach(btn => {
+    btn.querySelector('.alerts-count').textContent = count > 0 ? count : '';
+    btn.classList.toggle('has-alerts', count > 0);
+  });
 }
 
 function wireAlertsPanel() {
-  const toggle = document.getElementById('alerts-toggle');
+  const toggles = document.querySelectorAll('.alerts-toggle-btn');
   const panel = document.getElementById('alerts-panel');
 
-  toggle.addEventListener('click', () => {
-    const opening = panel.hasAttribute('hidden');
-    if (opening) {
-      renderAlertsList();
-      panel.removeAttribute('hidden');
-    } else {
-      panel.setAttribute('hidden', '');
-    }
+  toggles.forEach(toggle => {
+    toggle.addEventListener('click', () => {
+      const opening = panel.hasAttribute('hidden');
+      if (opening) {
+        renderAlertsList();
+        panel.removeAttribute('hidden');
+      } else {
+        panel.setAttribute('hidden', '');
+      }
+    });
   });
 
   document.addEventListener('click', (e) => {
-    if (!panel.hasAttribute('hidden') && !panel.contains(e.target) && e.target !== toggle && !toggle.contains(e.target)) {
+    const clickedToggle = [...toggles].some(t => t.contains(e.target));
+    if (!panel.hasAttribute('hidden') && !panel.contains(e.target) && !clickedToggle) {
       panel.setAttribute('hidden', '');
     }
   });
@@ -1030,14 +1062,57 @@ function renderAlertsList() {
     list.innerHTML = '<p class="alerts-empty">Inga aktiva trafikstörningar just nu.</p>';
     return;
   }
+
+  // Group by mode — an alert with multiple affected modes appears in each
+  // group it's relevant to. Alerts with no resolvable route_id/mode land
+  // in "Övrigt" rather than being silently dropped.
+  const groups = new Map(); // mode -> alert[]
   activeAlerts.forEach(alert => {
-    const item = document.createElement('div');
-    item.className = 'alert-item';
-    item.innerHTML = `
-      <p class="alert-header">⚠ ${escapeHtml(alert.header)}</p>
-      ${alert.description ? `<p class="alert-desc">${escapeHtml(alert.description)}</p>` : ''}
+    const modes = alert.modes.length ? alert.modes : ['other'];
+    modes.forEach(mode => {
+      if (!groups.has(mode)) groups.set(mode, []);
+      groups.get(mode).push(alert);
+    });
+  });
+
+  const order = ['pendeltag', 'roslagsbanan', 'metro', 'tram', 'bus', 'boat', 'other'];
+  order.filter(mode => groups.has(mode)).forEach(mode => {
+    const alerts = groups.get(mode);
+    const group = document.createElement('div');
+    group.className = 'alert-group';
+
+    const header = document.createElement('button');
+    header.type = 'button';
+    header.className = 'alert-group-header';
+    const icon = mode === 'other' ? '❓' : (MODE_ICONS[mode] || '');
+    const label = mode === 'other' ? 'Övrigt' : (MODE_LABELS_SV[mode] || mode);
+    header.innerHTML = `
+      <span>${icon} ${escapeHtml(label)}</span>
+      <span class="alert-group-count">${alerts.length}</span>
+      <span class="alert-group-arrow">▾</span>
     `;
-    list.appendChild(item);
+
+    const body = document.createElement('div');
+    body.className = 'alert-group-body';
+    body.hidden = true;
+    alerts.forEach(alert => {
+      const item = document.createElement('div');
+      item.className = 'alert-item';
+      item.innerHTML = `
+        <p class="alert-header">⚠ ${escapeHtml(alert.header)}</p>
+        ${alert.description ? `<p class="alert-desc">${escapeHtml(alert.description)}</p>` : ''}
+      `;
+      body.appendChild(item);
+    });
+
+    header.addEventListener('click', () => {
+      body.hidden = !body.hidden;
+      header.classList.toggle('expanded', !body.hidden);
+    });
+
+    group.appendChild(header);
+    group.appendChild(body);
+    list.appendChild(group);
   });
 }
 
@@ -1136,7 +1211,8 @@ async function loadTrainTripClassification() {
   if (cached) {
     trainTripMap = cached.tripMap;
     railAreaModeOverride = new Map(Object.entries(cached.areaOverride).map(([k, v]) => [Number(k), v]));
-    console.log(`[gtfs-static] using cached classification (${Object.keys(trainTripMap).length} trips, ${railAreaModeOverride.size} station areas)`);
+    routeIdToMode = cached.routeMode || {};
+    console.log(`[gtfs-static] using cached classification (${Object.keys(trainTripMap).length} trips, ${railAreaModeOverride.size} station areas, ${Object.keys(routeIdToMode).length} routes)`);
     applyRailOverrides();
     return;
   }
@@ -1164,6 +1240,7 @@ async function loadTrainTripClassification() {
       if (kind) routeClassification.set(r.route_id, kind);
     });
     console.log(`[gtfs-static] ${routeClassification.size} classified routes found in routes.txt`);
+    routeIdToMode = Object.fromEntries(routeClassification);
 
     const map = {};
     trips.forEach(t => {
@@ -1179,7 +1256,7 @@ async function loadTrainTripClassification() {
     const stopTimesCsv = await zip.file('stop_times.txt').async('string');
     await buildRailAreaOverrides(stopTimesCsv, map);
 
-    await writeTrainTripCache(map, railAreaModeOverride);
+    await writeTrainTripCache(map, railAreaModeOverride, routeIdToMode);
     applyRailOverrides();
   } catch (err) {
     console.error('[gtfs-static] failed to load/parse static GTFS — vehicles will show as "other", station rail/tram split may be imprecise', err);
@@ -1277,20 +1354,20 @@ async function readTrainTripCache() {
   try {
     const cached = await idbGet(TRAIN_TRIPS_CACHE_KEY);
     if (!cached) return null;
-    const { fetchedAt, tripMap, areaOverride } = cached;
+    const { fetchedAt, tripMap, areaOverride, routeMode } = cached;
     if (Date.now() - fetchedAt > TRAIN_TRIPS_CACHE_MAX_AGE_MS) return null;
     if (!tripMap || !areaOverride) return null; // stale shape from an older cache version
-    return { tripMap, areaOverride };
+    return { tripMap, areaOverride, routeMode: routeMode || {} };
   } catch (err) {
     console.warn('[gtfs-static] could not read cached classification', err);
     return null;
   }
 }
 
-async function writeTrainTripCache(tripMap, areaOverrideMap) {
+async function writeTrainTripCache(tripMap, areaOverrideMap, routeMode) {
   try {
     const areaOverride = Object.fromEntries(areaOverrideMap);
-    await idbSet(TRAIN_TRIPS_CACHE_KEY, { fetchedAt: Date.now(), tripMap, areaOverride });
+    await idbSet(TRAIN_TRIPS_CACHE_KEY, { fetchedAt: Date.now(), tripMap, areaOverride, routeMode });
   } catch (err) {
     console.warn('[gtfs-static] could not cache classification', err);
   }

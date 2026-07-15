@@ -15,11 +15,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="style.css?v=25">
+<link rel="stylesheet" href="style.css?v=26">
 </head>
 <body>
 
-<span id="app-version">v8</span>
+<span id="app-version">v9</span>
 
 <!-- Start screen: choose map view or journey planner before anything loads -->
 <div id="start-screen">
@@ -64,7 +64,7 @@
     </div>
   </div>
   <div id="titlebar-actions">
-    <button id="alerts-toggle" type="button" title="Trafikläge">⚠<span class="alerts-count"></span></button>
+    <button id="alerts-toggle" class="alerts-toggle-btn" type="button" title="Trafikläge">⚠<span class="alerts-count"></span></button>
     <button id="station-search-toggle" type="button" title="Sök station">🔍</button>
     <button id="journey-toggle" type="button">Res A→B</button>
     <button id="status-pill" type="button" title="Anslutningsstatus — klicka för detaljer">
@@ -134,7 +134,10 @@
         <h2>Från A till B</h2>
       </div>
     </div>
-    <button id="journey-close" type="button" aria-label="Stäng">✕</button>
+    <div id="journey-header-actions">
+      <button id="alerts-toggle-journey" class="alerts-toggle-btn" type="button" title="Trafikläge">⚠<span class="alerts-count"></span></button>
+      <button id="journey-close" type="button" aria-label="Stäng">✕</button>
+    </div>
   </div>
   <div id="journey-body">
     <div id="saved-routes" hidden>
@@ -224,6 +227,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/protobufjs/8.0.2/protobuf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.5.4/papaparse.min.js"></script>
-<script src="app.js?v=33"></script>
+<script src="app.js?v=34"></script>
 </body>
 </html>
