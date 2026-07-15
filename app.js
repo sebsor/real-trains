@@ -141,12 +141,14 @@ document.addEventListener('DOMContentLoaded', () => {
   registerServiceWorker();
 
   // Shown once, up front, only if at least one key hasn't been set yet —
-  // not re-prompted every time a flow is entered.
-  // Only prompt if literally no keys are saved yet — not if just one of
-  // the three is missing, which would otherwise keep reappearing for
-  // anyone who's saved some but not all of them.
+  // not re-prompted every time a flow is entered. The overlay has no
+  // `hidden` attribute in the raw HTML (visible by default), so the
+  // "keys exist" case must explicitly hide it too, not just skip showing it.
+  const setupOverlay = document.getElementById('setup-overlay');
   if (!apiKey && !staticApiKey && !resrobotApiKey) {
-    document.getElementById('setup-overlay').removeAttribute('hidden');
+    setupOverlay.removeAttribute('hidden');
+  } else {
+    setupOverlay.setAttribute('hidden', '');
   }
 });
 
