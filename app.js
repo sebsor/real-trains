@@ -1530,8 +1530,8 @@ function renderTransitLeg(leg) {
       ${originTrack ? `<span class="itin-track">Läge ${escapeHtml(originTrack)}</span>` : ''}
     </div>
     <div class="itin-line-info">
-      <span class="itin-badge dot-${mode}">${escapeHtml(lineLabel)}</span>
-      <span class="itin-line-desc">mot ${escapeHtml((leg.Destination && leg.Destination.name) || '')}</span>
+      <span class="itin-badge dot-${mode}">${MODE_ICONS[mode] || ''} ${escapeHtml(lineLabel)}</span>
+      <span class="itin-line-desc">${MODE_LABELS_SV[mode] || ''} mot ${escapeHtml((leg.Destination && leg.Destination.name) || '')}</span>
     </div>
     <div class="itin-stop">
       <span class="itin-time">${formatClock(leg.Destination && leg.Destination.time)}</span>
@@ -1574,6 +1574,9 @@ function renderWalkLeg(leg) {
 const MODE_LABELS_SV = {
   pendeltag: 'Pendeltåg', roslagsbanan: 'Roslagsbanan', metro: 'Tunnelbana',
   tram: 'Spårvagn', bus: 'Buss', boat: 'Båt',
+};
+const MODE_ICONS = {
+  pendeltag: '🚆', roslagsbanan: '🚈', metro: '🚇', tram: '🚊', bus: '🚌', boat: '⛴️',
 };
 
 // Only lists the modes actually present in this specific trip, rather than
@@ -1677,7 +1680,7 @@ function renderLegChip(leg) {
   const chip = document.createElement('span');
   if (leg.type === 'WALK' || leg.type === 'TRSF') {
     chip.className = 'trip-leg trip-leg-walk';
-    chip.textContent = leg.dist ? `Gå ${leg.dist} m` : 'Gå';
+    chip.textContent = leg.dist ? `🚶 Gå ${leg.dist} m` : '🚶 Gå';
     return chip;
   }
   const catCode = leg.Product && leg.Product[0] && leg.Product[0].catCode;
@@ -1685,7 +1688,7 @@ function renderLegChip(leg) {
   const lineLabel = (leg.Product && leg.Product[0] && (leg.Product[0].displayNumber || leg.Product[0].line)) || leg.name || '?';
 
   chip.className = 'trip-leg';
-  chip.innerHTML = `<span class="trip-leg-dot dot-${mode}"></span><span>${escapeHtml(lineLabel)}</span>`;
+  chip.innerHTML = `<span class="trip-leg-icon">${MODE_ICONS[mode] || ''}</span><span class="trip-leg-dot dot-${mode}"></span><span>${escapeHtml(lineLabel)}</span>`;
   return chip;
 }
 

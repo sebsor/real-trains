@@ -473,6 +473,7 @@ body{
   display:flex;align-items:center;gap:5px;font-size:12px;
   padding:4px 8px;border-radius:6px;background:var(--panel);
 }
+.trip-leg-icon{font-size:11px;line-height:1;}
 .trip-leg-dot{width:8px;height:8px;border-radius:50%;flex:none;}
 .trip-leg-walk{color:var(--muted);font-style:italic;}
 .trip-leg-arrow{color:var(--muted);font-size:11px;}
