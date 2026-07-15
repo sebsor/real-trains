@@ -468,11 +468,15 @@ body{
 }
 
 /* Each leg is a colored vertical bar (mode-colored) with its two stops
-   pinned to top/bottom, mirroring SL's own app layout. */
+   pinned to top/bottom, mirroring SL's own app layout. A divider after
+   each step makes it clear where one leg ends and the next begins, even
+   when there's no transfer-wait row between them (immediate connections). */
 .itin-leg{
-  position:relative;padding:6px 0 6px 20px;
+  position:relative;padding:6px 0 14px 20px;
   border-left:3px solid var(--muted);margin-left:6px;
+  border-bottom:1px solid var(--border);margin-bottom:10px;
 }
+.itin-leg:last-of-type{border-bottom:none;margin-bottom:0;}
 .itin-pendeltag{border-left-color:var(--pendeltag);}
 .itin-roslagsbanan{border-left-color:var(--roslagsbanan);}
 .itin-metro{border-left-color:var(--metro);}

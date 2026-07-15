@@ -1285,7 +1285,10 @@ async function searchTrips() {
   // fall back to raw coordinates for addresses/current-location, with
   // walking legs enabled so ResRobot can route on foot to/from transit —
   // this is exactly what originWalk/destWalk are documented for.
-  const params = {};
+  // passlist=true requests every intermediate stop per leg (confirmed in
+  // Trafiklab's own docs), used to draw the trip map route as a sequence
+  // of real stops rather than one straight origin-to-destination line.
+  const params = { passlist: 'true' };
   if (journeyFrom.extId) params.originId = journeyFrom.extId;
   else {
     params.originCoordLat = journeyFrom.lat;
@@ -1543,8 +1546,21 @@ function renderTripMap(container, legs) {
       missingCoords = true;
       return;
     }
-    const originLatLng = [o.lat, o.lon];
-    const destLatLng = [d.lat, d.lon];
+
+    // Prefer the full stop sequence (from passlist=true) over a single
+    // straight origin-to-destination line — Stop is the typical HAFAS
+    // field name for intermediate stops; check a couple of plausible
+    // shapes defensively since this wasn't directly confirmed in the spec.
+    const passedStops = (leg.Stops && leg.Stops.Stop) || leg.Stop || null;
+    let points;
+    if (Array.isArray(passedStops) && passedStops.length) {
+      points = passedStops
+        .filter(s => s.lat != null && s.lon != null)
+        .map(s => [s.lat, s.lon]);
+    }
+    if (!points || points.length < 2) {
+      points = [[o.lat, o.lon], [d.lat, d.lon]];
+    }
 
     const isWalk = leg.type === 'WALK' || leg.type === 'TRSF';
     const catCode = leg.Product && leg.Product[0] && leg.Product[0].catCode;
@@ -1553,15 +1569,17 @@ function renderTripMap(container, legs) {
       ? getComputedStyle(document.documentElement).getPropertyValue(`--${mode}`).trim()
       : '#7d8590';
 
-    L.polyline([originLatLng, destLatLng], {
+    L.polyline(points, {
       color, weight: isWalk ? 3 : 5, opacity: 0.9,
       dashArray: isWalk ? '4,7' : null,
     }).addTo(map);
 
-    [originLatLng, destLatLng].forEach(ll => {
+    // Endpoint markers only (not every intermediate stop) — keeps the map
+    // readable rather than dotting every single passthrough station.
+    [[o.lat, o.lon], [d.lat, d.lon]].forEach(ll => {
       L.circleMarker(ll, { radius: 5, color: '#0d1117', weight: 2, fillColor: color, fillOpacity: 1 }).addTo(map);
-      bounds.push(ll);
     });
+    points.forEach(p => bounds.push(p));
   });
 
   if (bounds.length) {
@@ -1570,6 +1588,7 @@ function renderTripMap(container, legs) {
   if (missingCoords) {
     console.warn('[journey] one or more legs had no coordinates from ResRobot — route line may be incomplete. Inspect window.DEBUG_LAST_TRIPS.');
   }
+  console.log('[journey] rendered trip map — if the route looks like straight lines instead of following stops, check whether legs have a Stops.Stop array:', legs[0]);
   if (!bounds.length) {
     container.innerHTML = '<p class="trip-map-empty">Ingen kartdata tillgänglig för den här resan.</p>';
   }
