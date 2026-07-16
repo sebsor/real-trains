@@ -1125,7 +1125,15 @@ async function fetchVehiclePositions() {
     }
     const buf = new Uint8Array(await res.arrayBuffer());
     const message = FeedMessageType.decode(buf);
-    const obj = FeedMessageType.toObject(message, { defaults: true });
+    // No `defaults: true` here (unlike the alerts decode below) — with it,
+    // protobufjs fills every absent optional field (bearing, speed, ids)
+    // with its type default (0 for numbers), making "SL didn't report a
+    // bearing" indistinguishable from "SL reported exactly 0°". Confirmed
+    // live: 100% of active Roslagsbanan vehicles showed bearing:0, which
+    // turned out to be this coercion hiding "no data" as "north", not 21
+    // trains all genuinely facing north. Leaving defaults off lets absent
+    // fields come through as real undefined instead.
+    const obj = FeedMessageType.toObject(message);
 
     const vehicles = (obj.entity || [])
       .map(e => e.vehicle)
@@ -1403,7 +1411,8 @@ function renderVehicles(vehicles) {
     const id = (v.vehicle && v.vehicle.id) || (v.trip && v.trip.tripId) || `${v.position.latitude},${v.position.longitude}`;
     seen.add(id);
     const latlng = [v.position.latitude, v.position.longitude];
-    const bearing = v.position.bearing != null ? v.position.bearing : 0;
+    const hasBearing = v.position.bearing != null; // now a real distinction — see decode comment above
+    const bearing = hasBearing ? v.position.bearing : 0;
 
     // Recreated fresh every poll rather than repositioned via setLatLng —
     // confirmed live that stations (created once, never setLatLng'd) stay
@@ -1413,16 +1422,17 @@ function renderVehicles(vehicles) {
     const existing = vehicleMarkers.get(id);
     if (existing) map.removeLayer(existing);
 
-    // Fixed: confirmed live that a nested child element with its own
-    // inline style="transform:rotate()" was the actual cause of the
-    // persistent drift bug (removing it fixed positioning outright).
-    // Direction is reintroduced here WITHOUT that pattern — bucketed into
-    // 16 compass-direction classes (22.5° each) applied directly via
-    // className on the icon itself, the same mechanism proven safe for
-    // station markers, instead of an inline transform on a child.
+    // Rotation uses mask-image with 16 pre-rotated shapes (see CSS) rather
+    // than the transform/rotate property family, which didn't visually
+    // apply when tested live on a Leaflet-positioned element. Vehicles
+    // with no real bearing data get a plain dot instead of an arrow —
+    // confirmed live that defaulting to "0°" for absent data made it look
+    // like every Roslagsbanan vehicle was frozen facing north, when SL's
+    // feed simply doesn't report heading for that vehicle type at all.
     const dirBucket = Math.round(bearing / 22.5) % 16;
+    const shapeClass = hasBearing ? `dir-${dirBucket}` : 'no-bearing';
     const icon = L.divIcon({
-      className: `train-marker-wrap train-${kind} dir-${dirBucket}`,
+      className: `train-marker-wrap train-${kind} ${shapeClass}`,
       iconSize: [16, 16],
       iconAnchor: [8, 8],
     });
@@ -1433,7 +1443,7 @@ function renderVehicles(vehicles) {
     const speedKmh = v.position.speed != null ? Math.round(v.position.speed * 3.6) : null;
     marker.bindPopup(`
       <p class="popup-title">${escapeHtml(label)}</p>
-      <p class="popup-meta">${kind === 'other' ? 'Okänd linjetyp' : kind}${speedKmh != null ? ` · ${speedKmh} km/h` : ''}${bearing != null ? ` · bäring ${bearing}°` : ''}</p>
+      <p class="popup-meta">${kind === 'other' ? 'Okänd linjetyp' : kind}${speedKmh != null ? ` · ${speedKmh} km/h` : ''}${hasBearing ? ` · bäring ${bearing}°` : ''}</p>
     `);
   });
 

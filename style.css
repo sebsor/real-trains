@@ -336,6 +336,13 @@ body{
   -webkit-mask-position:center;mask-position:center;
   filter:drop-shadow(0 0 1px #0d1117) drop-shadow(0 0 1px #0d1117);
 }
+/* Plain circle for vehicles with no real bearing data — a simple circular
+   mask, not an arrow, so absence of heading data doesn't visually imply
+   "facing north". */
+.no-bearing{
+  -webkit-mask-image:radial-gradient(circle, black 60%, transparent 62%);
+  mask-image:radial-gradient(circle, black 60%, transparent 62%);
+}
 .dir-0{-webkit-mask-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cg%20transform%3D%22rotate%280.0%208%208%29%22%3E%3Cpath%20d%3D%22M8%200%20L13%2016%20L8%2012.5%20L3%2016%20Z%22%20fill%3D%22black%22/%3E%3C/g%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cg%20transform%3D%22rotate%280.0%208%208%29%22%3E%3Cpath%20d%3D%22M8%200%20L13%2016%20L8%2012.5%20L3%2016%20Z%22%20fill%3D%22black%22/%3E%3C/g%3E%3C/svg%3E");}
 .dir-1{-webkit-mask-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cg%20transform%3D%22rotate%2822.5%208%208%29%22%3E%3Cpath%20d%3D%22M8%200%20L13%2016%20L8%2012.5%20L3%2016%20Z%22%20fill%3D%22black%22/%3E%3C/g%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cg%20transform%3D%22rotate%2822.5%208%208%29%22%3E%3Cpath%20d%3D%22M8%200%20L13%2016%20L8%2012.5%20L3%2016%20Z%22%20fill%3D%22black%22/%3E%3C/g%3E%3C/svg%3E");}
 .dir-2{-webkit-mask-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cg%20transform%3D%22rotate%2845.0%208%208%29%22%3E%3Cpath%20d%3D%22M8%200%20L13%2016%20L8%2012.5%20L3%2016%20Z%22%20fill%3D%22black%22/%3E%3C/g%3E%3C/svg%3E");mask-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cg%20transform%3D%22rotate%2845.0%208%208%29%22%3E%3Cpath%20d%3D%22M8%200%20L13%2016%20L8%2012.5%20L3%2016%20Z%22%20fill%3D%22black%22/%3E%3C/g%3E%3C/svg%3E");}
