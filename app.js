@@ -155,6 +155,8 @@ let stopPointsCache = null;     // cached /v1/stop-points response, shared betwe
 let gidToAreaId = new Map();    // stop-point gid -> stop_area id, used to join GTFS stop_id against SL's site model
 let stationMarkers = new Map(); // siteId -> { marker, mode, site }
 let vehicleMarkers = new Map(); // vehicleId -> Leaflet marker
+let lastVehiclePosition = new Map(); // vehicleId -> { lat, lon } from the previous poll, used to derive heading when SL doesn't report bearing
+const MIN_MOVEMENT_FOR_DERIVED_BEARING_M = 8; // below this, GPS jitter dominates and a derived direction would be unreliable
 let FeedMessageType = null;     // protobufjs decoded type, set once on init
 let vehiclePollTimer = null;
 
@@ -435,6 +437,20 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   const a = Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// True compass bearing (0-360°, 0=north) from point 1 to point 2 — the
+// standard spherical forward-azimuth formula, not a naive flat atan2 on
+// raw lat/lon (which would be skewed since a degree of longitude covers
+// less physical distance than a degree of latitude, more so the further
+// from the equator).
+function bearingBetween(lat1, lon1, lat2, lon2) {
+  const toRad = deg => deg * Math.PI / 180;
+  const phi1 = toRad(lat1), phi2 = toRad(lat2);
+  const dLon = toRad(lon2 - lon1);
+  const y = Math.sin(dLon) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
 function wireModeCheckboxes() {
@@ -1410,9 +1426,32 @@ function renderVehicles(vehicles) {
 
     const id = (v.vehicle && v.vehicle.id) || (v.trip && v.trip.tripId) || `${v.position.latitude},${v.position.longitude}`;
     seen.add(id);
-    const latlng = [v.position.latitude, v.position.longitude];
-    const hasBearing = v.position.bearing != null; // now a real distinction — see decode comment above
-    const bearing = hasBearing ? v.position.bearing : 0;
+    const lat = v.position.latitude, lon = v.position.longitude;
+    const latlng = [lat, lon];
+
+    // Prefer SL's own reported bearing when present. When it's not (the
+    // common case for e.g. Roslagsbanan — confirmed live, not a rendering
+    // bug), derive heading ourselves from the change in position since the
+    // last poll — works for any mode regardless of what SL's feed reports,
+    // since it only needs two GPS fixes and real movement between them. A
+    // genuinely stationary vehicle correctly gets no direction at all
+    // (a stopped vehicle doesn't have a meaningful heading to show) rather
+    // than a stale or misleading one.
+    let hasBearing = v.position.bearing != null;
+    let bearingIsDerived = false;
+    let bearing = hasBearing ? v.position.bearing : 0;
+    if (!hasBearing) {
+      const prev = lastVehiclePosition.get(id);
+      if (prev) {
+        const movedMeters = haversineMeters(prev.lat, prev.lon, lat, lon);
+        if (movedMeters >= MIN_MOVEMENT_FOR_DERIVED_BEARING_M) {
+          bearing = bearingBetween(prev.lat, prev.lon, lat, lon);
+          hasBearing = true;
+          bearingIsDerived = true;
+        }
+      }
+    }
+    lastVehiclePosition.set(id, { lat, lon });
 
     // Recreated fresh every poll rather than repositioned via setLatLng —
     // confirmed live that stations (created once, never setLatLng'd) stay
@@ -1425,10 +1464,9 @@ function renderVehicles(vehicles) {
     // Rotation uses mask-image with 16 pre-rotated shapes (see CSS) rather
     // than the transform/rotate property family, which didn't visually
     // apply when tested live on a Leaflet-positioned element. Vehicles
-    // with no real bearing data get a plain dot instead of an arrow —
-    // confirmed live that defaulting to "0°" for absent data made it look
-    // like every Roslagsbanan vehicle was frozen facing north, when SL's
-    // feed simply doesn't report heading for that vehicle type at all.
+    // with no bearing at all (no real data AND not enough movement yet to
+    // derive one — e.g. right after a page load, before a second fix
+    // arrives) get a plain dot instead of an arrow.
     const dirBucket = Math.round(bearing / 22.5) % 16;
     const shapeClass = hasBearing ? `dir-${dirBucket}` : 'no-bearing';
     const icon = L.divIcon({
@@ -1443,7 +1481,7 @@ function renderVehicles(vehicles) {
     const speedKmh = v.position.speed != null ? Math.round(v.position.speed * 3.6) : null;
     marker.bindPopup(`
       <p class="popup-title">${escapeHtml(label)}</p>
-      <p class="popup-meta">${kind === 'other' ? 'Okänd linjetyp' : kind}${speedKmh != null ? ` · ${speedKmh} km/h` : ''}${hasBearing ? ` · bäring ${bearing}°` : ''}</p>
+      <p class="popup-meta">${kind === 'other' ? 'Okänd linjetyp' : kind}${speedKmh != null ? ` · ${speedKmh} km/h` : ''}${hasBearing ? ` · ${bearingIsDerived ? 'riktning (beräknad)' : 'bäring'} ${Math.round(bearing)}°` : ''}</p>
     `);
   });
 
@@ -1453,6 +1491,9 @@ function renderVehicles(vehicles) {
       map.removeLayer(marker);
       vehicleMarkers.delete(id);
     }
+  }
+  for (const id of lastVehiclePosition.keys()) {
+    if (!seen.has(id)) lastVehiclePosition.delete(id);
   }
 }
 
