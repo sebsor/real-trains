@@ -155,9 +155,9 @@ let map;
 // a security issue — Trafiklab won't reset/upgrade a key if that happens,
 // so this is a real tradeoff to accept, not a purely cosmetic one. Leave
 // any of these blank to disable that specific feature entirely.
-const DEFAULT_API_KEY = '';           // GTFS Regional Realtime (Trafikläge)
-const DEFAULT_STATIC_API_KEY = '';    // GTFS Regional Static data (station accuracy)
-const DEFAULT_RESROBOT_API_KEY = '';  // ResRobot v2.1 (journey planner)
+const DEFAULT_API_KEY = '3efa7caab77a4a8997cb342a740e0735';           // GTFS Regional Realtime (Trafikläge)
+const DEFAULT_STATIC_API_KEY = '48e21bc403d94a4e862dd48b0512e6a3';    // GTFS Regional Static data (station accuracy)
+const DEFAULT_RESROBOT_API_KEY = 'd7e04a7d-b4c5-4f77-af39-744e3d1ceabe';  // ResRobot v2.1 (journey planner)
 
 let apiKey = DEFAULT_API_KEY;               // realtime (Trafikläge / ServiceAlerts)
 let staticApiKey = DEFAULT_STATIC_API_KEY;  // static GTFS (routes/trips)
@@ -792,6 +792,7 @@ function extractDepartures(data) {
     time: dep.expected || (dep.departure && dep.departure.time) || dep.scheduled,
     scheduledTime: dep.scheduled || (dep.departure && dep.departure.scheduled) || null,
     platform: (dep.stop_point && (dep.stop_point.designation || dep.stop_point.name)) || dep.platform || null,
+    mode: classifyDepartureMode(dep),
     deviationTexts: Array.isArray(dep.deviations)
       ? dep.deviations.map(d => d.text || d.consequence || d.header).filter(Boolean)
       : [],
@@ -799,12 +800,34 @@ function extractDepartures(data) {
   }));
 }
 
+// SL's transport_mode enum (BUS/TRAM/METRO/TRAIN/SHIP) was confirmed once
+// for the /v1/lines endpoint earlier in this build, not directly confirmed
+// for THIS departures endpoint — field name/values here are a best-guess
+// extension of that same convention. TRAIN can't be split into
+// pendeltåg/roslagsbanan at this level (that split only exists via the
+// GTFS static join used for stations/vehicles), so it defaults to the
+// pendeltåg color/icon — check window.DEBUG_LAST_DEPARTURES and adjust
+// here if this doesn't match what's actually in the response.
+function classifyDepartureMode(dep) {
+  const raw = (dep.line && dep.line.transport_mode) || dep.transport_mode || '';
+  const upper = raw.toString().toUpperCase();
+  if (upper.includes('BUS')) return 'bus';
+  if (upper.includes('TRAM')) return 'tram';
+  if (upper.includes('METRO')) return 'metro';
+  if (upper.includes('SHIP') || upper.includes('FERRY') || upper.includes('BOAT')) return 'boat';
+  if (upper.includes('TRAIN')) return 'pendeltag';
+  return null;
+}
+
 function renderDepartureRow(dep) {
   const tr = document.createElement('tr');
   tr.className = 'dep-row';
   const timeLabel = formatDepartureTime(dep.time);
+  const mode = dep.mode; // null if unrecognized — badge just falls back to .dep-line's default neutral styling
+  const icon = mode ? (MODE_ICONS[mode] || '') : '';
+  const modeStyle = mode ? ` style="background:var(--${mode});color:#0d1117"` : '';
   tr.innerHTML = `
-    <td><span class="dep-line">${escapeHtml(dep.line)}</span></td>
+    <td><span class="dep-line"${modeStyle}>${icon ? `${icon} ` : ''}${escapeHtml(dep.line)}</span></td>
     <td>${escapeHtml(dep.destination)}</td>
     <td class="dep-time ${dep.deviation ? 'deviation' : ''}" data-time="${escapeHtml(dep.time || '')}">${timeLabel}</td>
   `;
