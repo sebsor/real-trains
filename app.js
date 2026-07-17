@@ -801,9 +801,15 @@ function renderBoardModeFilter() {
   container.querySelectorAll('.board-mode-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const mode = btn.dataset.mode;
-      if (activeDepartureModes.has(mode)) activeDepartureModes.delete(mode);
-      else activeDepartureModes.add(mode);
-      btn.classList.toggle('active', activeDepartureModes.has(mode));
+      const isOnlyActive = activeDepartureModes.size === 1 && activeDepartureModes.has(mode);
+      // Click a pill to isolate to just that mode; click the already-solo
+      // pill again to reset back to showing everything — more useful than
+      // independent per-pill toggles, since "show just this one" is the
+      // common case and shouldn't take N-1 clicks to get to.
+      activeDepartureModes = isOnlyActive ? new Set(distinctModes) : new Set([mode]);
+      container.querySelectorAll('.board-mode-btn').forEach(b => {
+        b.classList.toggle('active', activeDepartureModes.has(b.dataset.mode));
+      });
       renderBoardRows();
     });
   });
