@@ -3,12 +3,33 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Spårläge — Live tågkarta</title>
-<meta name="description" content="Realtidskarta över SL:s pendeltåg och Roslagsbanan">
+<title>Spårläge — Stationer, avgångar & reseplanerare</title>
+<meta name="description" content="Stationer, avgångar, reseplanerare (A till B) och trafikläge för SL — Pendeltåg, Roslagsbanan, tunnelbana, buss och båt.">
 <meta name="theme-color" content="#0d1117">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
+
+<!-- Open Graph / link preview cards (WhatsApp, iMessage, Discord, Slack, etc.)
+     Note: this is a static site with no server, so every shared link (app,
+     a specific station, or a specific trip) shows this SAME generic card —
+     chat apps read these tags straight from the raw HTML without running
+     any JS, so there's no way to make the preview say e.g. "Trip from X to
+     Y" per link without an actual backend generating per-URL HTML. This is
+     the best available on GitHub Pages: one good generic card. -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Spårläge — Stationer, avgångar & reseplanerare">
+<meta property="og:description" content="Stationer, avgångar, reseplanerare (A till B) och trafikläge för SL — Pendeltåg, Roslagsbanan, tunnelbana, buss och båt.">
+<meta property="og:image" content="https://sebsor.github.io/real-trains/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:url" content="https://sebsor.github.io/real-trains/">
+<meta property="og:site_name" content="Spårläge">
+<meta property="og:locale" content="sv_SE">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Spårläge — Stationer, avgångar & reseplanerare">
+<meta name="twitter:description" content="Stationer, avgångar, reseplanerare (A till B) och trafikläge för SL.">
+<meta name="twitter:image" content="https://sebsor.github.io/real-trains/og-image.png">
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,7 +40,7 @@
 </head>
 <body>
 
-<span id="app-version">v17</span>
+<span id="app-version">v18</span>
 <div id="offline-banner" hidden>📡 Du är offline — visar cachad data där det går</div>
 
 <!-- Start screen: choose map view or journey planner before anything loads -->
