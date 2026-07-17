@@ -732,10 +732,13 @@ async function loadDepartures(site) {
   const empty = document.getElementById('board-empty');
   const table = document.getElementById('board-table');
   const rows = document.getElementById('board-rows');
+  const modeFilter = document.getElementById('board-mode-filter');
   empty.hidden = false;
   empty.textContent = 'Hämtar avgångar…';
   table.hidden = true;
   rows.innerHTML = '';
+  modeFilter.setAttribute('hidden', '');
+  modeFilter.innerHTML = '';
   selectedDepartureRow = null;
   if (departureCountdownTimer) clearInterval(departureCountdownTimer);
 
@@ -745,17 +748,19 @@ async function loadDepartures(site) {
     const data = await res.json();
     window.DEBUG_LAST_DEPARTURES = data;
 
-    const departures = extractDepartures(data);
+    const departures = extractDepartures(data)
+      .sort((a, b) => new Date(a.time) - new Date(b.time))
+      .slice(0, 25);
 
     if (!departures.length) {
       empty.textContent = 'Inga kommande avgångar hittades för den här stationen just nu.';
       return;
     }
 
-    departures
-      .sort((a, b) => new Date(a.time) - new Date(b.time))
-      .slice(0, 25)
-      .forEach(dep => rows.appendChild(renderDepartureRow(dep)));
+    currentBoardDepartures = departures;
+    activeDepartureModes = new Set(departures.map(d => d.mode).filter(Boolean));
+    renderBoardModeFilter();
+    renderBoardRows();
 
     empty.hidden = true;
     table.hidden = false;
@@ -768,6 +773,52 @@ async function loadDepartures(site) {
     console.error('[departures] failed', err);
     empty.textContent = 'Kunde inte hämta avgångar (se konsolen för detaljer).';
   }
+}
+
+let currentBoardDepartures = [];
+let activeDepartureModes = new Set();
+
+// Filter buttons only appear when a station actually serves more than one
+// mode — otherwise a single non-interactive button would just be clutter
+// with nothing to filter.
+function renderBoardModeFilter() {
+  const container = document.getElementById('board-mode-filter');
+  const distinctModes = [...new Set(currentBoardDepartures.map(d => d.mode).filter(Boolean))];
+
+  if (distinctModes.length < 2) {
+    container.setAttribute('hidden', '');
+    container.innerHTML = '';
+    return;
+  }
+
+  container.removeAttribute('hidden');
+  container.innerHTML = distinctModes.map(mode => `
+    <button type="button" class="board-mode-btn active" data-mode="${mode}" style="--mode-color:var(--${mode})">
+      ${MODE_ICONS[mode] || ''} ${MODE_LABELS_SV[mode] || mode}
+    </button>
+  `).join('');
+
+  container.querySelectorAll('.board-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.mode;
+      if (activeDepartureModes.has(mode)) activeDepartureModes.delete(mode);
+      else activeDepartureModes.add(mode);
+      btn.classList.toggle('active', activeDepartureModes.has(mode));
+      renderBoardRows();
+    });
+  });
+}
+
+// Departures with an unrecognized mode (null) always stay visible
+// regardless of the filter — we can't confidently say they don't belong
+// to whichever mode is currently selected, so hiding them risks losing
+// something the person actually wants to see.
+function renderBoardRows() {
+  const rows = document.getElementById('board-rows');
+  rows.innerHTML = '';
+  currentBoardDepartures
+    .filter(dep => !dep.mode || activeDepartureModes.has(dep.mode))
+    .forEach(dep => rows.appendChild(renderDepartureRow(dep)));
 }
 
 function updateDepartureCountdowns() {
