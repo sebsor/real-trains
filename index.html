@@ -36,11 +36,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="style.css?v=35">
+<link rel="stylesheet" href="style.css?v=36">
 </head>
 <body>
 
-<span id="app-version">v22</span>
+<span id="app-version">v23</span>
 <div id="offline-banner" hidden>📡 Du är offline — visar cachad data där det går</div>
 
 <!-- Start screen: choose map view or journey planner before anything loads -->
@@ -87,13 +87,17 @@
       <p id="start-subtitle">Vad vill du göra?</p>
       <div id="start-choices">
         <button type="button" class="start-choice" id="start-map">
-          <span class="start-choice-icon">🗺️</span>
-          <span class="start-choice-title">Visa kartan</span>
+          <span class="start-choice-row">
+            <span class="start-choice-icon">🗺️</span>
+            <span class="start-choice-title">Visa kartan</span>
+          </span>
           <span class="start-choice-desc">Stationer, avgångar och trafikläge</span>
         </button>
         <button type="button" class="start-choice" id="start-journey">
-          <span class="start-choice-icon">🧭</span>
-          <span class="start-choice-title">Res A → B</span>
+          <span class="start-choice-row">
+            <span class="start-choice-icon">🧭</span>
+            <span class="start-choice-title">Res A → B</span>
+          </span>
           <span class="start-choice-desc">Hitta resor mellan adresser eller stationer</span>
         </button>
       </div>
