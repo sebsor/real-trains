@@ -237,94 +237,111 @@ body{
 #start-screen{
   position:absolute;inset:0;z-index:3000;
   background:var(--bg);
-  display:flex;align-items:center;justify-content:center;padding:28px;
+  display:flex;align-items:center;justify-content:center;padding:14px;
 }
 #start-screen[hidden]{display:none;}
 
 #start-frame{
-  width:100%;max-width:600px;max-height:calc(100vh - 56px);
+  width:100%;max-width:600px;max-height:calc(100vh - 28px);
   display:flex;flex-direction:column;
-  border-radius:28px;overflow:hidden;
+  border-radius:22px;overflow:hidden;
   border:1px solid rgba(255,255,255,.08);
-  box-shadow:0 30px 80px rgba(0,0,0,.5);
+  box-shadow:0 20px 60px rgba(0,0,0,.5);
   background:var(--panel);
 }
 
 /* Illustrated hero band — a warm dusk/rail scene rather than the flat
    glow-only background from before, with the title overlaid on its lower
    (darker) portion so text stays legible without needing a text-shadow
-   fighting a bright sky. */
-#start-hero{position:relative;flex:none;height:160px;}
+   fighting a bright sky. Mobile-first: compact by default, grows for
+   wider screens in the min-width query below. */
+#start-hero{position:relative;flex:none;height:110px;}
 #start-illustration{position:absolute;inset:0;width:100%;height:100%;display:block;}
 #start-hero-text{
   position:absolute;inset:0;
   display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
-  padding-bottom:22px;text-align:center;
+  padding-bottom:14px;text-align:center;
 }
 #start-logo{
-  font-size:32px;color:var(--amber);display:block;margin-bottom:4px;
-  filter:drop-shadow(0 0 14px rgba(255,183,3,.6));
+  font-size:26px;color:var(--amber);display:block;margin-bottom:3px;
+  filter:drop-shadow(0 0 12px rgba(255,183,3,.6));
 }
-#start-hero-text h1{font-size:26px;margin:0;font-weight:600;color:#fff;letter-spacing:-.01em;}
+#start-hero-text h1{font-size:21px;margin:0;font-weight:600;color:#fff;letter-spacing:-.01em;}
 
 /* Clean content section below the illustration — kept on a solid
    background rather than continuing the illustration behind it, so the
    interactive choices/quick-access stay easy to read and consistent with
    the rest of the app's UI chrome. */
-#start-content{padding:20px 24px 24px;overflow-y:auto;text-align:center;}
-#start-subtitle{color:var(--muted);font-size:12px;margin:0 0 14px;font-family:'JetBrains Mono',monospace;}
+#start-content{padding:16px 18px 18px;overflow-y:auto;text-align:center;}
+#start-subtitle{color:var(--muted);font-size:11px;margin:0 0 12px;font-family:'JetBrains Mono',monospace;}
 
-#start-choices{display:flex;gap:12px;}
+/* Mobile-first: stacked by default, switches to side-by-side once there's
+   room (min-width query below) rather than the other way around. */
+#start-choices{display:flex;flex-direction:column;gap:8px;}
 .start-choice{
-  flex:1;
   background:var(--panel-2);
-  border:1px solid var(--border);border-radius:16px;
-  padding:12px 14px;text-align:left;cursor:pointer;color:var(--text);
-  display:flex;flex-direction:column;gap:3px;
+  border:1px solid var(--border);border-radius:14px;
+  padding:10px 12px;text-align:left;cursor:pointer;color:var(--text);
+  display:flex;flex-direction:column;gap:2px;
   transition:border-color .2s ease, transform .2s ease, box-shadow .2s ease;
 }
 .start-choice:hover{
   border-color:var(--amber);transform:translateY(-2px);
   box-shadow:0 8px 20px rgba(255,183,3,.1);
 }
-.start-choice-row{display:flex;align-items:center;gap:9px;}
+.start-choice-row{display:flex;align-items:center;gap:8px;}
 .start-choice-icon{
-  width:32px;height:32px;border-radius:10px;flex:none;
+  width:28px;height:28px;border-radius:9px;flex:none;
   background:rgba(255,183,3,.12);
   display:flex;align-items:center;justify-content:center;
-  font-size:16px;line-height:1;
+  font-size:14px;line-height:1;
 }
-.start-choice-title{font-size:14px;font-weight:600;}
-.start-choice-desc{font-size:11px;color:var(--muted);line-height:1.3;}
+.start-choice-title{font-size:13px;font-weight:600;}
+.start-choice-desc{font-size:10.5px;color:var(--muted);line-height:1.3;}
 
 #start-quick-access{
-  margin-top:24px;padding-top:20px;border-top:1px solid var(--border);
-  text-align:left;max-height:30vh;overflow-y:auto;
+  margin-top:16px;padding-top:14px;border-top:1px solid var(--border);
+  text-align:left;max-height:26vh;overflow-y:auto;
 }
 #start-quick-access[hidden]{display:none;}
-.start-quick-section{margin-bottom:14px;}
+.start-quick-section{margin-bottom:10px;}
 .start-quick-section[hidden]{display:none;}
 .start-quick-label{
-  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em;
-  color:var(--muted);margin:0 0 8px;
+  font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.1em;
+  color:var(--muted);margin:0 0 6px;
 }
-.start-quick-list{display:flex;flex-direction:column;gap:7px;}
+.start-quick-list{display:flex;flex-direction:column;gap:6px;}
 .start-quick-item{
-  display:flex;align-items:center;gap:10px;
-  background:var(--panel-2);border:1px solid var(--border);border-radius:12px;
-  padding:11px 13px;cursor:pointer;font-size:12px;color:var(--text);
+  display:flex;align-items:center;gap:9px;
+  background:var(--panel-2);border:1px solid var(--border);border-radius:11px;
+  padding:9px 11px;cursor:pointer;font-size:11px;color:var(--text);
   transition:border-color .15s ease, background .15s ease;
 }
 .start-quick-item:hover{border-color:var(--amber);}
 .start-quick-item-icon{
-  flex:none;font-size:14px;width:30px;height:30px;border-radius:9px;
+  flex:none;font-size:12px;width:26px;height:26px;border-radius:8px;
   background:rgba(255,183,3,.1);display:flex;align-items:center;justify-content:center;
 }
 .start-quick-item-text{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
-@media (max-width:560px){
-  #start-choices{flex-direction:column;}
-  #start-hero{height:130px;}
+/* Enhancement for wider screens — taller hero, side-by-side choices, more
+   breathing room. Mobile gets the compact base styles above by default. */
+@media (min-width:560px){
+  #start-screen{padding:28px;}
+  #start-frame{border-radius:28px;}
+  #start-hero{height:160px;}
+  #start-hero-text{padding-bottom:22px;}
+  #start-logo{font-size:32px;margin-bottom:4px;}
+  #start-hero-text h1{font-size:26px;}
+  #start-content{padding:20px 24px 24px;}
+  #start-subtitle{font-size:12px;margin-bottom:14px;}
+  #start-choices{flex-direction:row;gap:12px;}
+  .start-choice{padding:12px 14px;gap:3px;}
+  .start-choice-row{gap:9px;}
+  .start-choice-icon{width:32px;height:32px;border-radius:10px;font-size:16px;}
+  .start-choice-title{font-size:14px;}
+  .start-choice-desc{font-size:11px;}
+  #start-quick-access{margin-top:24px;padding-top:20px;max-height:30vh;}
 }
 
 #offline-banner{
