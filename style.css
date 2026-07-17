@@ -397,41 +397,12 @@ body{
 .dep-time{color:var(--amber);font-weight:600;}
 .dep-time.deviation{color:var(--red);}
 
-/* ---- Setup modal ---- */
-#setup-overlay{
-  position:absolute;inset:0;z-index:3500;
-  background:rgba(13,17,23,.82);backdrop-filter:blur(3px);
-  display:flex;align-items:center;justify-content:center;padding:20px;
-}
-#setup-overlay[hidden]{display:none;}
-#setup-card{
-  background:var(--panel);border:1px solid var(--border);border-radius:14px;
-  padding:28px;max-width:420px;width:100%;
-}
-#setup-eyebrow{
-  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;
-  color:var(--amber);margin:0 0 8px;
-}
-#setup-title{margin:0 0 12px;font-size:20px;}
-.setup-copy{color:var(--muted);font-size:13px;line-height:1.5;margin:0 0 16px;}
-.setup-steps{color:var(--text);font-size:13px;line-height:1.7;margin:0 0 18px;padding-left:20px;}
-.setup-steps a{color:var(--amber);}
-.setup-key-input{
-  width:100%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);
-  border-radius:8px;padding:10px 12px;font-family:'JetBrains Mono',monospace;font-size:13px;
-  margin-bottom:10px;display:block;
-}
-.setup-key-input:last-of-type{margin-bottom:16px;}
-.setup-key-input:focus{outline:2px solid var(--amber);outline-offset:1px;}
-.setup-actions{display:flex;gap:10px;flex-wrap:wrap;}
-.btn-primary,.btn-ghost{
+.btn-primary{
   font-family:'Space Grotesk',system-ui,sans-serif;font-size:13px;font-weight:600;
   border-radius:8px;padding:10px 16px;cursor:pointer;border:1px solid transparent;
+  background:var(--amber);color:#1a1300;
 }
-.btn-primary{background:var(--amber);color:#1a1300;}
 .btn-primary:hover{filter:brightness(1.08);}
-.btn-ghost{background:none;border-color:var(--border);color:var(--muted);}
-.btn-ghost:hover{color:var(--text);border-color:var(--muted);}
 
 /* ---- Journey planner panel ---- */
 #journey-panel.standalone{width:100%;border-right:none;}

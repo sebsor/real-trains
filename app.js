@@ -144,9 +144,24 @@ message VehicleDescriptor {
 
 // ---- State ----
 let map;
-let apiKey = localStorage.getItem('trafiklab_api_key') || '';               // realtime (Trafikläge / ServiceAlerts)
-let staticApiKey = localStorage.getItem('trafiklab_static_api_key') || '';  // static GTFS (routes/trips)
-let resrobotApiKey = localStorage.getItem('trafiklab_resrobot_api_key') || ''; // ResRobot (journey planner)
+// Fill these in with your own Trafiklab keys before deploying — the app
+// uses them for everyone automatically, no per-visitor setup needed. Per
+// Trafiklab's own published guidance (trafiklab.se/docs/using-trafiklab-data/
+// best-practices/keeping-api-keys-secret/), embedding a key in a distributed
+// client app is an accepted, expected pattern — "there's nothing wrong with
+// that" — and they state they know of no cases of keys being abused. The
+// residual risk is quota exhaustion (Bronze tier: 30k calls/month) if the
+// key is scraped or the app gets shared far more widely than intended, not
+// a security issue — Trafiklab won't reset/upgrade a key if that happens,
+// so this is a real tradeoff to accept, not a purely cosmetic one. Leave
+// any of these blank to disable that specific feature entirely.
+const DEFAULT_API_KEY = '3efa7caab77a4a8997cb342a740e0735';           // GTFS Regional Realtime (Trafikläge)
+const DEFAULT_STATIC_API_KEY = '48e21bc403d94a4e862dd48b0512e6a3';    // GTFS Regional Static data (station accuracy)
+const DEFAULT_RESROBOT_API_KEY = 'd7e04a7d-b4c5-4f77-af39-744e3d1ceabe';  // ResRobot v2.1 (journey planner)
+
+let apiKey = DEFAULT_API_KEY;               // realtime (Trafikläge / ServiceAlerts)
+let staticApiKey = DEFAULT_STATIC_API_KEY;  // static GTFS (routes/trips)
+let resrobotApiKey = DEFAULT_RESROBOT_API_KEY; // ResRobot (journey planner)
 let journeyFrom = null; // { label, lat, lon, extId? } — extId set only when a real stop was picked
 let journeyTo = null;
 let trainTripMap = {};          // trip_id -> mode, from static GTFS
@@ -163,28 +178,11 @@ let FeedMessageType = null;     // protobufjs decoded type, set once on init (sh
 // ==========================================================================
 document.addEventListener('DOMContentLoaded', () => {
   checkStorageAvailable();
-  wireSetupModal();
   wireJourneyPanel();
   wireStartScreen();
   wireAlertsPanel();
   wireOfflineBanner();
   registerServiceWorker();
-
-  // Shown once, up front, only if at least one key hasn't been set yet —
-  // not re-prompted every time a flow is entered. The overlay has no
-  // `hidden` attribute in the raw HTML (visible by default), so the
-  // "keys exist" case must explicitly hide it too, not just skip showing it.
-  const setupOverlay = document.getElementById('setup-overlay');
-  if (!apiKey && !staticApiKey && !resrobotApiKey) {
-    setupOverlay.removeAttribute('hidden');
-  } else {
-    setupOverlay.setAttribute('hidden', '');
-  }
-  trapFocus(setupOverlay, () => {
-    // Escape only closes it the same way "skip" does — doesn't silently
-    // discard keys already typed into the fields, just dismisses the modal.
-    if (!setupOverlay.hasAttribute('hidden')) setupOverlay.setAttribute('hidden', '');
-  });
 
   // Trafikläge doesn't depend on which flow (map or journey) is chosen —
   // both buttons exist in the DOM from the start, so start polling here
@@ -212,9 +210,9 @@ function checkStorageAvailable() {
   try {
     localStorage.setItem('__storage_test__', '1');
     localStorage.removeItem('__storage_test__');
-    console.log('[storage] localStorage is writable — keys should persist across reloads');
+    console.log('[storage] localStorage is writable — saved routes/stations/preferences should persist across reloads');
   } catch (err) {
-    console.error('[storage] localStorage is NOT writable — keys will NOT persist across reloads. ' +
+    console.error('[storage] localStorage is NOT writable — saved routes/stations/preferences will NOT persist across reloads. ' +
       'This is almost always private/incognito browsing mode blocking storage writes.', err);
   }
 }
@@ -508,63 +506,6 @@ function initMap() {
   setTimeout(() => map.invalidateSize(), 200);
   window.addEventListener('resize', () => map.invalidateSize());
   window.addEventListener('orientationchange', () => map.invalidateSize());
-}
-
-// ==========================================================================
-// Setup modal (API key)
-// ==========================================================================
-function wireSetupModal() {
-  const overlay = document.getElementById('setup-overlay');
-  const input = document.getElementById('setup-key-input');
-  const staticInput = document.getElementById('setup-static-key-input');
-  const resrobotInput = document.getElementById('setup-resrobot-key-input');
-  input.value = apiKey;
-  staticInput.value = staticApiKey;
-  resrobotInput.value = resrobotApiKey;
-
-  document.getElementById('setup-save').addEventListener('click', () => {
-    const val = input.value.trim();
-    const staticVal = staticInput.value.trim();
-    const resrobotVal = resrobotInput.value.trim();
-    if (!val && !staticVal && !resrobotVal) return;
-
-    let persistFailed = false;
-    const persist = (key, value) => {
-      try {
-        localStorage.setItem(key, value);
-      } catch (err) {
-        console.error(`[setup] failed to save ${key} to localStorage`, err);
-        persistFailed = true;
-      }
-    };
-
-    if (val) {
-      apiKey = val;
-      persist('trafiklab_api_key', apiKey);
-      startAlertsPolling(); // realtime key now only powers Trafikläge, not vehicle positions
-    }
-    if (staticVal) {
-      staticApiKey = staticVal;
-      persist('trafiklab_static_api_key', staticApiKey);
-      loadTrainTripClassificationPromise = loadTrainTripClassification();
-    }
-    if (resrobotVal) {
-      resrobotApiKey = resrobotVal;
-      persist('trafiklab_resrobot_api_key', resrobotApiKey);
-    }
-    overlay.setAttribute('hidden', '');
-
-    if (persistFailed) {
-      // Keys still work for this session (the variables are set above) but
-      // won't survive a reload — most commonly caused by private/incognito
-      // browsing mode blocking or throwing on localStorage writes.
-      alert('Nycklarna kunde inte sparas permanent (fungerar bara för denna session). Detta händer oftast i privat/inkognitoläge — prova ett vanligt webbläsarfönster om du vill slippa mata in dem varje gång.');
-    }
-  });
-
-  document.getElementById('setup-skip').addEventListener('click', () => {
-    overlay.setAttribute('hidden', '');
-  });
 }
 
 // ==========================================================================
