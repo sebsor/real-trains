@@ -232,6 +232,15 @@ async function startMapMode() {
   document.getElementById('legend').removeAttribute('hidden');
   setLoadingProgress(5, 'Startar kartan…');
 
+  // Full reload to a clean URL (no query string) rather than trying to
+  // safely tear down the live map/alerts polling in place — same approach
+  // already used for the journey panel's back button. Stripping the query
+  // string matters here specifically: without it, a station/trip deep link
+  // that brought you into map mode would just re-trigger itself immediately.
+  document.getElementById('map-back').addEventListener('click', () => {
+    location.href = location.pathname;
+  }, { once: true });
+
   initMap();
   wireBoard();
 
