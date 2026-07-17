@@ -36,43 +36,80 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="style.css?v=34">
+<link rel="stylesheet" href="style.css?v=35">
 </head>
 <body>
 
-<span id="app-version">v21</span>
+<span id="app-version">v22</span>
 <div id="offline-banner" hidden>📡 Du är offline — visar cachad data där det går</div>
 
 <!-- Start screen: choose map view or journey planner before anything loads -->
 <div id="start-screen">
-  <div id="start-content">
-    <span id="start-logo">◈</span>
-    <h1>Spårläge</h1>
-    <p id="start-subtitle">Vad vill du göra?</p>
-    <div id="start-choices">
-      <button type="button" class="start-choice" id="start-map">
-        <span class="start-choice-icon">🗺️</span>
-        <span class="start-choice-title">Visa kartan</span>
-        <span class="start-choice-desc">Stationer, avgångar och trafikläge</span>
-      </button>
-      <button type="button" class="start-choice" id="start-journey">
-        <span class="start-choice-icon">🧭</span>
-        <span class="start-choice-title">Res A → B</span>
-        <span class="start-choice-desc">Hitta resor mellan adresser eller stationer</span>
-      </button>
+  <div id="start-frame">
+    <div id="start-hero">
+      <svg id="start-illustration" viewBox="0 0 800 400" preserveAspectRatio="xMidYMax slice" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#4a3320"/>
+            <stop offset="40%" stop-color="#5c3a24"/>
+            <stop offset="75%" stop-color="#2a2118"/>
+            <stop offset="100%" stop-color="#181310"/>
+          </linearGradient>
+          <radialGradient id="sunGlow" cx="50%" cy="20%" r="60%">
+            <stop offset="0%" stop-color="#ffb703" stop-opacity="0.55"/>
+            <stop offset="100%" stop-color="#ffb703" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <rect width="800" height="400" fill="url(#skyGrad)"/>
+        <ellipse cx="400" cy="90" rx="420" ry="220" fill="url(#sunGlow)"/>
+        <circle cx="620" cy="60" r="2" fill="#ffe8b0" opacity="0.8"/>
+        <circle cx="140" cy="40" r="2" fill="#ffe8b0" opacity="0.6"/>
+        <circle cx="700" cy="100" r="1.5" fill="#ffe8b0" opacity="0.7"/>
+        <circle cx="80" cy="90" r="1.5" fill="#ffe8b0" opacity="0.5"/>
+        <path d="M0,220 Q100,185 200,210 T400,205 T600,220 T800,195 V400 H0 Z" fill="#1b140e" opacity="0.55"/>
+        <path d="M0,255 Q120,220 260,245 T520,235 T800,250 V400 H0 Z" fill="#15100b" opacity="0.8"/>
+        <path d="M0,330 Q250,308 420,317 T800,308" stroke="#3a2e22" stroke-width="4" fill="none" opacity="0.8"/>
+        <g transform="translate(430,300)">
+          <rect x="0" y="0" width="86" height="30" rx="10" fill="#181310" stroke="#ffb703" stroke-width="2"/>
+          <circle cx="20" cy="15" r="6" fill="#2dd4bf"/>
+          <circle cx="43" cy="15" r="6" fill="#f4863a"/>
+          <circle cx="66" cy="15" r="6" fill="#ffb703"/>
+        </g>
+        <circle cx="180" cy="322" r="4" fill="#ffb703" opacity="0.9"/>
+        <circle cx="650" cy="310" r="4" fill="#2dd4bf" opacity="0.8"/>
+      </svg>
+      <div id="start-hero-text">
+        <span id="start-logo">◈</span>
+        <h1>Spårläge</h1>
+      </div>
     </div>
-    <div id="start-quick-access" hidden>
-      <div id="start-quick-saved-routes" class="start-quick-section" hidden>
-        <p class="start-quick-label">SPARADE RESOR</p>
-        <div class="start-quick-list"></div>
+    <div id="start-content">
+      <p id="start-subtitle">Vad vill du göra?</p>
+      <div id="start-choices">
+        <button type="button" class="start-choice" id="start-map">
+          <span class="start-choice-icon">🗺️</span>
+          <span class="start-choice-title">Visa kartan</span>
+          <span class="start-choice-desc">Stationer, avgångar och trafikläge</span>
+        </button>
+        <button type="button" class="start-choice" id="start-journey">
+          <span class="start-choice-icon">🧭</span>
+          <span class="start-choice-title">Res A → B</span>
+          <span class="start-choice-desc">Hitta resor mellan adresser eller stationer</span>
+        </button>
       </div>
-      <div id="start-quick-saved-stations" class="start-quick-section" hidden>
-        <p class="start-quick-label">SPARADE STATIONER</p>
-        <div class="start-quick-list"></div>
-      </div>
-      <div id="start-quick-recent-stations" class="start-quick-section" hidden>
-        <p class="start-quick-label">SENAST VISADE</p>
-        <div class="start-quick-list"></div>
+      <div id="start-quick-access" hidden>
+        <div id="start-quick-saved-routes" class="start-quick-section" hidden>
+          <p class="start-quick-label">SPARADE RESOR</p>
+          <div class="start-quick-list"></div>
+        </div>
+        <div id="start-quick-saved-stations" class="start-quick-section" hidden>
+          <p class="start-quick-label">SPARADE STATIONER</p>
+          <div class="start-quick-list"></div>
+        </div>
+        <div id="start-quick-recent-stations" class="start-quick-section" hidden>
+          <p class="start-quick-label">SENAST VISADE</p>
+          <div class="start-quick-list"></div>
+        </div>
       </div>
     </div>
   </div>
