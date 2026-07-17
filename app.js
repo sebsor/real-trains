@@ -155,9 +155,9 @@ let map;
 // a security issue — Trafiklab won't reset/upgrade a key if that happens,
 // so this is a real tradeoff to accept, not a purely cosmetic one. Leave
 // any of these blank to disable that specific feature entirely.
-const DEFAULT_API_KEY = '3efa7caab77a4a8997cb342a740e0735';           // GTFS Regional Realtime (Trafikläge)
-const DEFAULT_STATIC_API_KEY = '48e21bc403d94a4e862dd48b0512e6a3';    // GTFS Regional Static data (station accuracy)
-const DEFAULT_RESROBOT_API_KEY = 'd7e04a7d-b4c5-4f77-af39-744e3d1ceabe';  // ResRobot v2.1 (journey planner)
+const DEFAULT_API_KEY = '';           // GTFS Regional Realtime (Trafikläge)
+const DEFAULT_STATIC_API_KEY = '';    // GTFS Regional Static data (station accuracy)
+const DEFAULT_RESROBOT_API_KEY = '';  // ResRobot v2.1 (journey planner)
 
 let apiKey = DEFAULT_API_KEY;               // realtime (Trafikläge / ServiceAlerts)
 let staticApiKey = DEFAULT_STATIC_API_KEY;  // static GTFS (routes/trips)
@@ -814,9 +814,6 @@ function renderDepartureRow(dep) {
   detailTr.hidden = true;
   const detailParts = [];
   if (dep.platform) detailParts.push(`<div>Läge/plattform: <strong>${escapeHtml(dep.platform)}</strong></div>`);
-  if (dep.scheduledTime && dep.scheduledTime !== dep.time) {
-    detailParts.push(`<div>Tidtabell: ${formatDepartureTime(dep.scheduledTime)} (realtid: ${timeLabel})</div>`);
-  }
   if (dep.deviationTexts.length) {
     detailParts.push(...dep.deviationTexts.map(t => `<div class="dep-deviation-text">⚠ ${escapeHtml(t)}</div>`));
   }
