@@ -1,36 +1,40 @@
 /* ==========================================================================
-   Spårläge — live SL traffic map (rail, metro, tram, bus, boat)
+   Spårläge — SL stations, departures, journey planner & Trafikläge
+   (live vehicle tracking was tried and removed — see git history / past
+   conversation for why: SL's feed doesn't reliably report heading for
+   several vehicle types, e.g. Roslagsbanan, and after trying several fixes
+   including deriving heading from movement between polls, it still didn't
+   give a good enough experience across all modes to keep.)
 
    Data sources:
    - Stations + departures: SL Transport API (transport.integration.sl.se)
      JSON, no key required.
-   - Live vehicle GPS: Trafiklab GTFS-RT VehiclePositions feed (protobuf),
-     requires a Trafiklab API key with both "GTFS Regional Realtime" and
-     "GTFS Regional Static data" added to the project (stored client-side
-     in localStorage — fine for a personal hobby project, not meant for
-     public distribution since the key is visible in the network tab).
+   - Trafikläge (service alerts): Trafiklab GTFS-RT ServiceAlerts feed
+     (protobuf), requires a Trafiklab API key with "GTFS Regional Realtime"
+     added to the project (stored client-side in localStorage — fine for a
+     personal hobby project, not meant for public distribution since the
+     key is visible in the network tab).
+   - Station mode accuracy + alert grouping: Trafiklab GTFS Regional Static
+     data, requires its own separate key ("GTFS Regional Static data").
 
-   How mode classification actually works (confirmed live, not guessed):
-   - Stations: /v1/stop-points gives each stop_area a `type` — RAILWSTN,
-     METROSTN, TRAMSTN, BUSTERM, SHIPBER/FERRYBER. This is a good first
-     pass but NOT enough on its own: Roslagsbanan stop_areas are typed
-     TRAMSTN (it's narrow-gauge/light-rail, so SL buckets it with real
-     trams), which would otherwise misclassify it. The authoritative fix:
-     join the static GTFS stop_times.txt against the same train trip_ids
-     already identified for vehicle classification, giving the *actual*
-     station list per line (pendeltag vs roslagsbanan) rather than relying
-     on the type field. See buildRailAreaOverrides().
-   - Vehicles: the real-time feed almost never populates trip.routeId or
-     vehicle.label (confirmed: 13 of 1065 vehicles had a routeId at all).
-     The only reliable path is joining each vehicle's trip_id against
-     SL's static GTFS schedule (routes.txt + trips.txt), which DOES carry
-     real route names.
+   How station mode classification actually works (confirmed live, not
+   guessed):
+   - /v1/stop-points gives each stop_area a `type` — RAILWSTN, METROSTN,
+     TRAMSTN, BUSTERM, SHIPBER/FERRYBER. This is a good first pass but NOT
+     enough on its own: Roslagsbanan stop_areas are typed TRAMSTN (it's
+     narrow-gauge/light-rail, so SL buckets it with real trams), which
+     would otherwise misclassify it. The authoritative fix: join the
+     static GTFS stop_times.txt against train trip_ids (identified via
+     routes.txt/trips.txt), giving the *actual* station list per line
+     (pendeltag vs roslagsbanan) rather than relying on the type field.
+     See buildRailAreaOverrides(). The same route classification also
+     powers Trafikläge's per-mode alert grouping (routeIdToMode).
    ========================================================================== */
 
 const SL_SITES_URL = 'https://transport.integration.sl.se/v1/sites?expand=true';
 const SL_STOP_POINTS_URL = 'https://transport.integration.sl.se/v1/stop-points';
 const SL_DEPARTURES_URL = (siteId) => `https://transport.integration.sl.se/v1/sites/${siteId}/departures`;
-const GTFS_RT_URL = (key) => `https://opendata.samtrafiken.se/gtfs-rt/sl/VehiclePositions.pb?key=${key}`;
+
 const SERVICE_ALERTS_URL = (key) => `https://opendata.samtrafiken.se/gtfs-rt/sl/ServiceAlerts.pb?key=${key}`;
 const ALERTS_POLL_MS = 60000; // alerts change far less often than positions — poll gently
 const GTFS_STATIC_URL = (key) => `https://opendata.samtrafiken.se/gtfs/sl/sl.zip?key=${key}`; // uses staticApiKey, not apiKey
@@ -47,7 +51,6 @@ const TRAIN_TRIPS_CACHE_KEY = 'sl_mode_trips_v3';
 const TRAIN_TRIPS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // static schedule data changes daily at most
 const LEGEND_PREFS_KEY = 'sparlage_legend_prefs_v1';
 
-const VEHICLE_POLL_MS = 8000; // SL's feed itself updates ~every 2s server-side; 8s keeps monthly quota comfortable (~7.5 calls/min, Bronze tier caps at 30k/month) while feeling meaningfully smoother than 15s
 const STOCKHOLM_CENTER = [59.334, 18.06];
 const BUS_STATION_MIN_ZOOM = 14; // SL has ~10k+ bus stops — only render up close, or the map is unreadable
 
@@ -72,8 +75,7 @@ const MODE_PRIORITY = ['pendeltag', 'roslagsbanan', 'metro', 'tram', 'boat', 'bu
 // bucketed by GTFS extended route_type (see classifyRoute()).
 const VEHICLE_MODES = ['pendeltag', 'roslagsbanan', 'metro', 'tram', 'bus', 'boat'];
 
-let activeModes = new Set(VEHICLE_MODES); // controls both vehicle + station visibility
-let vehiclesVisible = false; // master toggle, independent of per-mode filters — off by default to save API quota until opted in
+let activeModes = new Set(VEHICLE_MODES); // controls station visibility by mode (name kept from when it also controlled vehicles)
 
 // ---- Minimal GTFS-Realtime schema (subset needed for VehiclePositions) ----
 // Transcribed field-for-field from the official spec so the wire format
@@ -142,7 +144,7 @@ message VehicleDescriptor {
 
 // ---- State ----
 let map;
-let apiKey = localStorage.getItem('trafiklab_api_key') || '';               // realtime (VehiclePositions)
+let apiKey = localStorage.getItem('trafiklab_api_key') || '';               // realtime (Trafikläge / ServiceAlerts)
 let staticApiKey = localStorage.getItem('trafiklab_static_api_key') || '';  // static GTFS (routes/trips)
 let resrobotApiKey = localStorage.getItem('trafiklab_resrobot_api_key') || ''; // ResRobot (journey planner)
 let journeyFrom = null; // { label, lat, lon, extId? } — extId set only when a real stop was picked
@@ -154,11 +156,7 @@ let railAreaModeOverride = new Map(); // stop_area id -> 'pendeltag' | 'roslagsb
 let stopPointsCache = null;     // cached /v1/stop-points response, shared between station classification and the override join
 let gidToAreaId = new Map();    // stop-point gid -> stop_area id, used to join GTFS stop_id against SL's site model
 let stationMarkers = new Map(); // siteId -> { marker, mode, site }
-let vehicleMarkers = new Map(); // vehicleId -> Leaflet marker
-let lastVehiclePosition = new Map(); // vehicleId -> { lat, lon } from the previous poll, used to derive heading when SL doesn't report bearing
-const MIN_MOVEMENT_FOR_DERIVED_BEARING_M = 8; // below this, GPS jitter dominates and a derived direction would be unreliable
-let FeedMessageType = null;     // protobufjs decoded type, set once on init
-let vehiclePollTimer = null;
+let FeedMessageType = null;     // protobufjs decoded type, set once on init (shared by Trafikläge alerts)
 
 // ==========================================================================
 // Boot
@@ -231,41 +229,13 @@ async function startMapMode() {
   cleanupStaleLocalStorageKeys();
   setLoadingProgress(10, 'Förbereder…');
 
-  if (apiKey && vehiclesVisible) {
-    startVehiclePolling();
-  } else if (!apiKey) {
-    setStatus('warn', 'Ingen API-nyckel');
-  } else {
-    setStatus('', 'Fordon avstängda');
+  // Static GTFS classification is still needed even without live vehicles —
+  // it's what lets stations split correctly (e.g. Roslagsbanan vs Spårvagn,
+  // see STOP_AREA_TYPE_TO_MODE comment) and lets Trafikläge group alerts by
+  // vehicle type via routeIdToMode.
+  if (staticApiKey && !loadTrainTripClassificationPromise) {
+    loadTrainTripClassificationPromise = loadTrainTripClassification();
   }
-  if (!staticApiKey) {
-    console.warn('[gtfs-static] no static-data key set — vehicles will show as "other" until one is added');
-  } else {
-    // Re-render once classification (kicked off at boot, or started here if
-    // the key wasn't available yet at boot time) resolves, in case vehicles
-    // started polling before it finished. Reuses the same in-flight promise
-    // rather than triggering a second fetch of the static GTFS zip.
-    if (!loadTrainTripClassificationPromise) loadTrainTripClassificationPromise = loadTrainTripClassification();
-    loadTrainTripClassificationPromise.then(() => {
-      if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
-    });
-  }
-
-  document.getElementById('vehicles-toggle').addEventListener('change', (e) => {
-    vehiclesVisible = e.target.checked;
-    saveLegendPrefs();
-    if (vehiclesVisible) {
-      if (apiKey) startVehiclePolling(); // resumes fetching, not just rendering
-    } else {
-      stopVehiclePolling(); // actually stops fetching — this is what saves quota
-      renderVehicles([]); // clear any markers already on the map immediately
-    }
-  });
-
-  document.getElementById('debug-toggle').addEventListener('change', () => {
-    // Force an immediate re-render with the new debug mode
-    if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
-  });
 
   map.on('zoomend', refreshAllStationVisibility);
   wireModeCheckboxes();
@@ -439,20 +409,6 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// True compass bearing (0-360°, 0=north) from point 1 to point 2 — the
-// standard spherical forward-azimuth formula, not a naive flat atan2 on
-// raw lat/lon (which would be skewed since a degree of longitude covers
-// less physical distance than a degree of latitude, more so the further
-// from the equator).
-function bearingBetween(lat1, lon1, lat2, lon2) {
-  const toRad = deg => deg * Math.PI / 180;
-  const phi1 = toRad(lat1), phi2 = toRad(lat2);
-  const dLon = toRad(lon2 - lon1);
-  const y = Math.sin(dLon) * Math.cos(phi2);
-  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLon);
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-}
-
 function wireModeCheckboxes() {
   document.querySelectorAll('.mode-checkbox').forEach(input => {
     input.addEventListener('change', () => {
@@ -461,36 +417,32 @@ function wireModeCheckboxes() {
       else activeModes.delete(mode);
       saveLegendPrefs();
       refreshAllStationVisibility();
-      if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
     });
   });
 }
 
 // First-time visitors get a lighter default (just the two trains — the
 // core use case) rather than every mode at once, since rendering ~6500
-// sites plus hundreds of vehicles all at startup is what was causing the
-// lag. Returning visitors get back whatever they last had on.
+// sites all at startup is what was causing the lag. Returning visitors
+// get back whatever they last had on.
 function loadLegendPrefs() {
   try {
     const raw = localStorage.getItem(LEGEND_PREFS_KEY);
     if (raw) {
       const prefs = JSON.parse(raw);
       activeModes = new Set(prefs.activeModes);
-      vehiclesVisible = prefs.vehiclesVisible !== false;
       return;
     }
   } catch (err) {
     console.warn('[legend] could not read saved preferences, using defaults', err);
   }
   activeModes = new Set(['roslagsbanan']);
-  vehiclesVisible = false;
 }
 
 function saveLegendPrefs() {
   try {
     localStorage.setItem(LEGEND_PREFS_KEY, JSON.stringify({
       activeModes: [...activeModes],
-      vehiclesVisible,
     }));
   } catch (err) {
     console.warn('[legend] could not save preferences (localStorage full?)', err);
@@ -498,7 +450,6 @@ function saveLegendPrefs() {
 }
 
 function syncLegendCheckboxesToState() {
-  document.getElementById('vehicles-toggle').checked = vehiclesVisible;
   document.querySelectorAll('.mode-checkbox').forEach(input => {
     input.checked = activeModes.has(input.dataset.mode);
   });
@@ -541,24 +492,9 @@ function initMap() {
   // but represents more real-world distance the further you zoom out.
   // Forcing a recalculation after load (and on resize) fixes this class
   // of bug outright.
-  // Vehicles are recreated fresh every 15s poll anyway (see renderVehicles),
-  // which is the mechanism actually proven to position them correctly —
-  // this just closes the up-to-15s gap after a zoom/pan by re-running that
-  // same recreation immediately, rather than waiting for the next poll.
-  map.on('zoomend moveend', () => {
-    if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
-  });
-
   setTimeout(() => map.invalidateSize(), 200);
   window.addEventListener('resize', () => map.invalidateSize());
   window.addEventListener('orientationchange', () => map.invalidateSize());
-}
-
-function setStatus(kind, text) {
-  const dot = document.getElementById('status-dot');
-  const label = document.getElementById('status-text');
-  dot.className = kind; // 'live' | 'warn' | 'error' | ''
-  label.textContent = text;
 }
 
 // ==========================================================================
@@ -592,15 +528,12 @@ function wireSetupModal() {
     if (val) {
       apiKey = val;
       persist('trafiklab_api_key', apiKey);
-      startVehiclePolling();
+      startAlertsPolling(); // realtime key now only powers Trafikläge, not vehicle positions
     }
     if (staticVal) {
       staticApiKey = staticVal;
       persist('trafiklab_static_api_key', staticApiKey);
       loadTrainTripClassificationPromise = loadTrainTripClassification();
-      loadTrainTripClassificationPromise.then(() => {
-        if (window.DEBUG_LAST_VEHICLES) renderVehicles(window.DEBUG_LAST_VEHICLES);
-      });
     }
     if (resrobotVal) {
       resrobotApiKey = resrobotVal;
@@ -618,7 +551,6 @@ function wireSetupModal() {
 
   document.getElementById('setup-skip').addEventListener('click', () => {
     overlay.setAttribute('hidden', '');
-    setStatus('warn', 'Endast stationer (ingen nyckel)');
   });
 }
 
@@ -935,35 +867,6 @@ function escapeHtml(str) {
 }
 
 // ==========================================================================
-// Live vehicle positions (GTFS-RT protobuf, requires API key)
-// ==========================================================================
-function startVehiclePolling() {
-  if (!window.protobuf) {
-    console.error('[vehicles] protobufjs did not load — check network/CDN access');
-    setStatus('error', 'protobufjs saknas');
-    return;
-  }
-  if (!FeedMessageType) {
-    const root = protobuf.parse(GTFS_RT_PROTO).root;
-    FeedMessageType = root.lookupType('transit_realtime.FeedMessage');
-  }
-
-  fetchVehiclePositions();
-  if (vehiclePollTimer) clearInterval(vehiclePollTimer);
-  vehiclePollTimer = setInterval(fetchVehiclePositions, VEHICLE_POLL_MS);
-}
-
-// Actually halts the fetch timer — quota only gets saved by not polling at
-// all, not just by hiding already-fetched markers.
-function stopVehiclePolling() {
-  if (vehiclePollTimer) {
-    clearInterval(vehiclePollTimer);
-    vehiclePollTimer = null;
-  }
-  setStatus('', 'Fordon pausade');
-}
-
-// ==========================================================================
 // Trafikläge (Service Alerts) — separate GTFS-RT feed, same key as
 // VehiclePositions. Not filtered by route/mode: SL's alert entities don't
 // reliably carry a matching route_id we could join against our own
@@ -1130,45 +1033,6 @@ function renderAlertsList() {
     group.appendChild(body);
     list.appendChild(group);
   });
-}
-
-async function fetchVehiclePositions() {
-  try {
-    const res = await fetch(GTFS_RT_URL(apiKey));
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`HTTP ${res.status} ${text}`.trim());
-    }
-    const buf = new Uint8Array(await res.arrayBuffer());
-    const message = FeedMessageType.decode(buf);
-    // No `defaults: true` here (unlike the alerts decode below) — with it,
-    // protobufjs fills every absent optional field (bearing, speed, ids)
-    // with its type default (0 for numbers), making "SL didn't report a
-    // bearing" indistinguishable from "SL reported exactly 0°". Confirmed
-    // live: 100% of active Roslagsbanan vehicles showed bearing:0, which
-    // turned out to be this coercion hiding "no data" as "north", not 21
-    // trains all genuinely facing north. Leaving defaults off lets absent
-    // fields come through as real undefined instead.
-    const obj = FeedMessageType.toObject(message);
-
-    const vehicles = (obj.entity || [])
-      .map(e => e.vehicle)
-      .filter(Boolean);
-
-    window.DEBUG_LAST_VEHICLES = vehicles; // inspect in console to tune classifyVehicle()
-    renderVehicles(vehicles);
-    setStatus('live', `${vehicles.length} fordon`);
-  } catch (err) {
-    // A CORS failure surfaces here as a generic "Failed to fetch" TypeError —
-    // the browser hides the real reason from JS. Check the Network tab for
-    // a request that fails before any response headers arrive.
-    console.error('[vehicles] fetch failed', err);
-    if (err instanceof TypeError) {
-      setStatus('error', 'Nätverksfel — se konsolen (troligen CORS)');
-    } else {
-      setStatus('error', err.message || 'Fel vid hämtning');
-    }
-  }
 }
 
 // ==========================================================================
@@ -1394,106 +1258,6 @@ async function writeTrainTripCache(tripMap, areaOverrideMap, routeMode) {
     await idbSet(TRAIN_TRIPS_CACHE_KEY, { fetchedAt: Date.now(), tripMap, areaOverride, routeMode });
   } catch (err) {
     console.warn('[gtfs-static] could not cache classification', err);
-  }
-}
-
-// trip_id -> mode, joined against the static GTFS classification built in
-// loadTrainTripClassification(). This is the only reliable path — see the
-// header comment on why route_id/label aren't usable.
-function classifyVehicle(v) {
-  const tripId = v.trip && v.trip.tripId;
-  return (tripId && trainTripMap[tripId]) || 'other';
-}
-
-function renderVehicles(vehicles) {
-  if (!vehiclesVisible) {
-    for (const marker of vehicleMarkers.values()) map.removeLayer(marker);
-    vehicleMarkers.clear();
-    return;
-  }
-
-  const showUnclassified = document.getElementById('debug-toggle').checked;
-  const seen = new Set();
-
-  vehicles.forEach(v => {
-    if (!v.position) return;
-    const kind = classifyVehicle(v);
-    if (kind === 'other') {
-      if (!showUnclassified) return;
-    } else if (!activeModes.has(kind)) {
-      return;
-    }
-
-    const id = (v.vehicle && v.vehicle.id) || (v.trip && v.trip.tripId) || `${v.position.latitude},${v.position.longitude}`;
-    seen.add(id);
-    const lat = v.position.latitude, lon = v.position.longitude;
-    const latlng = [lat, lon];
-
-    // Prefer SL's own reported bearing when present. When it's not (the
-    // common case for e.g. Roslagsbanan — confirmed live, not a rendering
-    // bug), derive heading ourselves from the change in position since the
-    // last poll — works for any mode regardless of what SL's feed reports,
-    // since it only needs two GPS fixes and real movement between them. A
-    // genuinely stationary vehicle correctly gets no direction at all
-    // (a stopped vehicle doesn't have a meaningful heading to show) rather
-    // than a stale or misleading one.
-    let hasBearing = v.position.bearing != null;
-    let bearingIsDerived = false;
-    let bearing = hasBearing ? v.position.bearing : 0;
-    if (!hasBearing) {
-      const prev = lastVehiclePosition.get(id);
-      if (prev) {
-        const movedMeters = haversineMeters(prev.lat, prev.lon, lat, lon);
-        if (movedMeters >= MIN_MOVEMENT_FOR_DERIVED_BEARING_M) {
-          bearing = bearingBetween(prev.lat, prev.lon, lat, lon);
-          hasBearing = true;
-          bearingIsDerived = true;
-        }
-      }
-    }
-    lastVehiclePosition.set(id, { lat, lon });
-
-    // Recreated fresh every poll rather than repositioned via setLatLng —
-    // confirmed live that stations (created once, never setLatLng'd) stay
-    // correctly positioned at every zoom level while setLatLng-updated
-    // vehicle markers drift. Recreating trades a little extra work every
-    // 15s for using the same marker-creation path that's proven reliable.
-    const existing = vehicleMarkers.get(id);
-    if (existing) map.removeLayer(existing);
-
-    // Rotation uses mask-image with 16 pre-rotated shapes (see CSS) rather
-    // than the transform/rotate property family, which didn't visually
-    // apply when tested live on a Leaflet-positioned element. Vehicles
-    // with no bearing at all (no real data AND not enough movement yet to
-    // derive one — e.g. right after a page load, before a second fix
-    // arrives) get a plain dot instead of an arrow.
-    const dirBucket = Math.round(bearing / 22.5) % 16;
-    const shapeClass = hasBearing ? `dir-${dirBucket}` : 'no-bearing';
-    const icon = L.divIcon({
-      className: `train-marker-wrap train-${kind} ${shapeClass}`,
-      iconSize: [16, 16],
-      iconAnchor: [8, 8],
-    });
-    const marker = L.marker(latlng, { icon, keyboard: false }).addTo(map);
-    vehicleMarkers.set(id, marker);
-
-    const label = (v.vehicle && v.vehicle.label) || id;
-    const speedKmh = v.position.speed != null ? Math.round(v.position.speed * 3.6) : null;
-    marker.bindPopup(`
-      <p class="popup-title">${escapeHtml(label)}</p>
-      <p class="popup-meta">${kind === 'other' ? 'Okänd linjetyp' : kind}${speedKmh != null ? ` · ${speedKmh} km/h` : ''}${hasBearing ? ` · ${bearingIsDerived ? 'riktning (beräknad)' : 'bäring'} ${Math.round(bearing)}°` : ''}</p>
-    `);
-  });
-
-  // Drop markers for vehicles no longer present in this poll
-  for (const [id, marker] of vehicleMarkers) {
-    if (!seen.has(id)) {
-      map.removeLayer(marker);
-      vehicleMarkers.delete(id);
-    }
-  }
-  for (const id of lastVehiclePosition.keys()) {
-    if (!seen.has(id)) lastVehiclePosition.delete(id);
   }
 }
 

@@ -15,11 +15,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="style.css?v=28">
+<link rel="stylesheet" href="style.css?v=29">
 </head>
 <body>
 
-<span id="app-version">v12</span>
+<span id="app-version">v13</span>
 
 <!-- Start screen: choose map view or journey planner before anything loads -->
 <div id="start-screen">
@@ -31,7 +31,7 @@
       <button type="button" class="start-choice" id="start-map">
         <span class="start-choice-icon">🗺️</span>
         <span class="start-choice-title">Visa kartan</span>
-        <span class="start-choice-desc">Live-positioner för tåg, stationer och avgångar</span>
+        <span class="start-choice-desc">Stationer, avgångar och trafikläge</span>
       </button>
       <button type="button" class="start-choice" id="start-journey">
         <span class="start-choice-icon">🧭</span>
@@ -60,17 +60,13 @@
     <span id="logo-mark">◈</span>
     <div>
       <h1>Spårläge</h1>
-      <p id="subtitle">Pendeltåg &amp; Roslagsbanan, live</p>
+      <p id="subtitle">Stationer &amp; avgångar</p>
     </div>
   </div>
   <div id="titlebar-actions">
     <button id="alerts-toggle" class="alerts-toggle-btn" type="button" title="Trafikläge">⚠<span class="alerts-count"></span></button>
     <button id="station-search-toggle" type="button" title="Sök station">🔍</button>
     <button id="journey-toggle" type="button">Res A→B</button>
-    <button id="status-pill" type="button" title="Anslutningsstatus — klicka för detaljer">
-      <span id="status-dot"></span>
-      <span id="status-text">Startar…</span>
-    </button>
   </div>
 </header>
 
@@ -91,17 +87,12 @@
 </div>
 
 <div id="legend" hidden>
-  <label class="legend-row legend-master"><input type="checkbox" id="vehicles-toggle"><span>Visa fordon (rörliga)</span></label>
   <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="pendeltag"><span class="dot dot-pendeltag"></span> Pendeltåg</label>
   <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="roslagsbanan" checked><span class="dot dot-roslagsbanan"></span> Roslagsbanan</label>
   <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="metro"><span class="dot dot-metro"></span> Tunnelbana</label>
   <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="tram"><span class="dot dot-tram"></span> Spårvagn</label>
   <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="boat"><span class="dot dot-boat"></span> Båt</label>
   <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="bus"><span class="dot dot-bus"></span> Buss <span class="legend-hint">(nära zoom)</span></label>
-  <label class="legend-row legend-toggle">
-    <input type="checkbox" id="debug-toggle">
-    <span>Visa oklassade fordon (debug)</span>
-  </label>
 </div>
 
 <!-- Departure board panel, slides in from the right when a station is clicked -->
@@ -203,8 +194,8 @@
     <p id="setup-eyebrow">KONFIGURATION</p>
     <h2 id="setup-title">En Trafiklab-nyckel behövs</h2>
     <p class="setup-copy">
-      Livepositionerna för tågen hämtas via Trafiklabs GTFS-RT-flöde, mode-klassificeringen via det statiska
-      GTFS-flödet, och reseplaneraren (Från A till B) via ResRobot. Trafiklab ger dessa <strong>tre separata nycklar</strong>
+      Trafikläge (störningsinfo) hämtas via Trafiklabs GTFS-RT-flöde, mode-klassificeringen av stationer
+      via det statiska GTFS-flödet, och reseplaneraren (Från A till B) via ResRobot. Trafiklab ger dessa <strong>tre separata nycklar</strong>
       även om du lägger till dem i samma projekt. Stationer och avgångar fungerar utan nyckel.
     </p>
     <ol class="setup-steps">
@@ -213,8 +204,8 @@
       <li>Lägg till <strong>GTFS Regional Realtime</strong>, <strong>GTFS Regional Static data</strong> och <strong>ResRobot v2.1</strong> i projektet — vardera ger en egen nyckel.</li>
       <li>Klistra in nycklarna nedan (valfritt att fylla i alla tre — det som saknas stängs bara av).</li>
     </ol>
-    <input type="text" id="setup-key-input" class="setup-key-input" placeholder="Realtime-nyckel (fordonspositioner)" autocomplete="off" spellcheck="false">
-    <input type="text" id="setup-static-key-input" class="setup-key-input" placeholder="Static data-nyckel (linjeklassificering)" autocomplete="off" spellcheck="false">
+    <input type="text" id="setup-key-input" class="setup-key-input" placeholder="Realtime-nyckel (trafikläge)" autocomplete="off" spellcheck="false">
+    <input type="text" id="setup-static-key-input" class="setup-key-input" placeholder="Static data-nyckel (stationsklassificering)" autocomplete="off" spellcheck="false">
     <input type="text" id="setup-resrobot-key-input" class="setup-key-input" placeholder="ResRobot-nyckel (reseplanerare)" autocomplete="off" spellcheck="false">
     <div class="setup-actions">
       <button id="setup-save" type="button" class="btn-primary">Spara och starta</button>
@@ -227,6 +218,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/protobufjs/8.0.2/protobuf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.5.4/papaparse.min.js"></script>
-<script src="app.js?v=36"></script>
+<script src="app.js?v=37"></script>
 </body>
 </html>
