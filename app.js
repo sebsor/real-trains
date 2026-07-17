@@ -1423,25 +1423,35 @@ function buildJourneyShareUrl(from, to) {
 // Encodes the exact selected itinerary — not the search criteria — so the
 // recipient sees precisely which train/bus and which times were chosen,
 // unaffected by schedule changes or different results on a later search.
-// Deliberately minimal fields only (not the full ResRobot response, and
-// not each leg's intermediate stop list from passlist) to keep the URL a
-// reasonable length for pasting into chat apps; the shared trip's map tab
-// falls back to a straight origin-to-destination line per leg rather than
-// following intermediate stops, same as the "coordinates unavailable" case
-// already handled in renderTripMap().
+// Kept deliberately minimal: short keys, and no lat/lon (only used by the
+// trip's optional map tab, not the itinerary — a shared trip's map falls
+// back to the same "no map data" state already used when ResRobot doesn't
+// provide coordinates). Long URLs were confirmed live to fail to generate
+// a link preview in chat apps at all — this keeps the link short enough
+// to actually unfurl, which matters more here than the map tab working.
 function buildTripShareUrl(trip) {
+  if (!window.LZString) {
+    console.error('[share] lz-string did not load — check network/CDN access');
+    alert('Kunde inte skapa delningslänk (ett skript kunde inte laddas). Se konsolen.');
+    return location.href;
+  }
   const legs = ((trip.LegList && trip.LegList.Leg) || []).map(leg => ({
-    type: leg.type,
-    name: leg.name,
-    dist: leg.dist,
-    duration: leg.duration,
-    Product: leg.Product && leg.Product.map(p => ({ catCode: p.catCode, displayNumber: p.displayNumber, line: p.line })),
-    Origin: leg.Origin && { name: leg.Origin.name, time: leg.Origin.time, lat: leg.Origin.lat, lon: leg.Origin.lon, track: leg.Origin.track },
-    Destination: leg.Destination && { name: leg.Destination.name, time: leg.Destination.time, lat: leg.Destination.lat, lon: leg.Destination.lon, track: leg.Destination.track },
+    t: leg.type,
+    n: leg.name,
+    d: leg.dist,
+    u: leg.duration,
+    p: leg.Product && leg.Product.map(p => ({ c: p.catCode, l: p.displayNumber || p.line })),
+    o: leg.Origin && { n: leg.Origin.name, t: leg.Origin.time, k: leg.Origin.track },
+    e: leg.Destination && { n: leg.Destination.name, t: leg.Destination.time, k: leg.Destination.track },
   }));
   const url = new URL(location.href);
   url.search = '';
-  const payload = btoa(unescape(encodeURIComponent(JSON.stringify({ duration: trip.duration, legs }))));
+  // lz-string's compressToEncodedURIComponent is already URL-safe (no
+  // further encodeURIComponent/base64 needed) and roughly halves the size
+  // again on top of the short keys above — confirmed live this was
+  // necessary: the earlier plain-base64 version produced URLs long enough
+  // that chat apps silently declined to generate a link preview at all.
+  const payload = LZString.compressToEncodedURIComponent(JSON.stringify({ u: trip.duration, l: legs }));
   url.searchParams.set('trip', payload);
   return url.toString();
 }
@@ -1479,8 +1489,24 @@ function parseDeepLink() {
   }
   if (params.has('trip')) {
     try {
-      const decoded = JSON.parse(decodeURIComponent(escape(atob(params.get('trip')))));
-      if (Array.isArray(decoded.legs) && decoded.legs.length) return { type: 'trip', duration: decoded.duration, legs: decoded.legs };
+      const json = LZString.decompressFromEncodedURIComponent(params.get('trip'));
+      const decoded = JSON.parse(json);
+      if (Array.isArray(decoded.l) && decoded.l.length) {
+        // Expand the compact share-payload shape back into what
+        // renderTripCard()/renderTripDetail()/renderLegChip() already
+        // expect (ResRobot's own field names), so none of that rendering
+        // code needs to know or care this came from a share link.
+        const legs = decoded.l.map(leg => ({
+          type: leg.t,
+          name: leg.n,
+          dist: leg.d,
+          duration: leg.u,
+          Product: leg.p && leg.p.map(p => ({ catCode: p.c, displayNumber: p.l })),
+          Origin: leg.o && { name: leg.o.n, time: leg.o.t, track: leg.o.k },
+          Destination: leg.e && { name: leg.e.n, time: leg.e.t, track: leg.e.k },
+        }));
+        return { type: 'trip', duration: decoded.u, legs };
+      }
     } catch (err) {
       console.warn('[deep-link] could not parse ?trip= payload', err);
     }
