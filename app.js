@@ -47,7 +47,7 @@ const RESROBOT_TRIP_URL = (params, key) => {
 // ResRobot's Product.catCode (1-9) maps roughly onto our existing mode
 // palette, so trip legs can reuse the same colors as the live map.
 const CAT_CODE_TO_MODE = { '5': 'metro', '6': 'tram', '7': 'bus', '8': 'boat' }; // 1,2,4 (various trains) fall back to 'pendeltag' color
-const TRAIN_TRIPS_CACHE_KEY = 'sl_mode_trips_v3';
+const TRAIN_TRIPS_CACHE_KEY = 'sl_mode_trips_v4'; // bumped from v3 — classifyRoute() now also catches Roslagsbanan branches by line-number pattern, not just name text
 const TRAIN_TRIPS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // static schedule data changes daily at most
 const LEGEND_PREFS_KEY = 'sparlage_legend_prefs_v1';
 
@@ -1296,6 +1296,15 @@ function classifyRoute(route) {
   const haystack = `${route.route_long_name || ''} ${route.route_short_name || ''} ${route.route_desc || ''}`.toLowerCase();
   if (haystack.includes('roslagsban')) return 'roslagsbanan';
   if (haystack.includes('pendeltåg') || haystack.includes('pendeltag')) return 'pendeltag';
+
+  // Roslagsbanan's line numbers follow a distinctive two-digit-plus-S
+  // pattern (27S/28S/29S — confirmed from an actual SL app screenshot
+  // earlier in this build), which catches branches whose route_long_name
+  // doesn't literally contain the word "Roslagsbanan" (e.g. a branch
+  // named just "Österskär" or "Kårsta") — this was confirmed live to be
+  // the actual cause of at least one station (Viggbyholm) staying stuck
+  // at the generic tram classification instead of being corrected.
+  if (/^\d{2}s$/i.test((route.route_short_name || '').trim())) return 'roslagsbanan';
 
   const rt = parseInt(route.route_type, 10);
   if (Number.isNaN(rt)) return null;
