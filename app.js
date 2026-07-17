@@ -167,6 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireJourneyPanel();
   wireStartScreen();
   wireAlertsPanel();
+  wireOfflineBanner();
   registerServiceWorker();
 
   // Shown once, up front, only if at least one key hasn't been set yet —
@@ -179,6 +180,11 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     setupOverlay.setAttribute('hidden', '');
   }
+  trapFocus(setupOverlay, () => {
+    // Escape only closes it the same way "skip" does — doesn't silently
+    // discard keys already typed into the fields, just dismisses the modal.
+    if (!setupOverlay.hasAttribute('hidden')) setupOverlay.setAttribute('hidden', '');
+  });
 
   // Trafikläge doesn't depend on which flow (map or journey) is chosen —
   // both buttons exist in the DOM from the start, so start polling here
@@ -189,6 +195,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // same static GTFS parse — needed even in journey-only mode, where
   // startMapMode() (which used to be the only place this ran) never fires.
   if (staticApiKey) loadTrainTripClassificationPromise = loadTrainTripClassification();
+
+  renderStartQuickAccess();
+
+  // A deep link (?station=... or ?journey=...) skips the start screen and
+  // jumps straight into the relevant flow.
+  const deepLink = parseDeepLink();
+  if (deepLink) handleDeepLink(deepLink);
 });
 
 // Confirms whether localStorage actually persists in this browsing
@@ -702,14 +715,37 @@ function refreshAllStationVisibility() {
 // ==========================================================================
 function wireBoard() {
   document.getElementById('board-close').addEventListener('click', closeBoard);
+  document.getElementById('board-save').addEventListener('click', () => {
+    if (!currentBoardSite) return;
+    const stations = loadSavedStations();
+    const idx = stations.findIndex(s => s.id === currentBoardSite.id);
+    if (idx >= 0) {
+      stations.splice(idx, 1); // already saved — tapping again un-saves it
+    } else {
+      stations.push({ id: currentBoardSite.id, name: currentBoardSite.name });
+    }
+    writeSavedStations(stations);
+    updateBoardSaveButton();
+    renderStartQuickAccess();
+  });
+  document.getElementById('board-share').addEventListener('click', () => {
+    if (!currentBoardSite) return;
+    shareUrl(buildStationShareUrl(currentBoardSite), currentBoardSite.name || 'Station');
+  });
+  trapFocus(document.getElementById('board'), closeBoard);
 }
 
+let currentBoardSite = null;
+
 function openBoard(site) {
+  currentBoardSite = site;
   const board = document.getElementById('board');
   document.getElementById('board-station-name').textContent = site.name || 'Station';
   board.classList.add('open');
   board.setAttribute('aria-hidden', 'false');
   loadDepartures(site);
+  updateBoardSaveButton();
+  pushRecentStation(site);
 
   // Avoid both slide-in panels being open at once — on narrow screens this
   // was causing horizontal overflow/scroll rather than a clean overlay.
@@ -719,6 +755,14 @@ function openBoard(site) {
     journeyPanel.setAttribute('aria-hidden', 'true');
     document.getElementById('journey-toggle').classList.remove('active');
   }
+}
+
+function updateBoardSaveButton() {
+  const btn = document.getElementById('board-save');
+  const isSaved = currentBoardSite && loadSavedStations().some(s => s.id === currentBoardSite.id);
+  btn.textContent = isSaved ? '★' : '☆';
+  btn.classList.toggle('saved', isSaved);
+  btn.title = isSaved ? 'Ta bort sparad station' : 'Spara station';
 }
 
 function closeBoard() {
@@ -1291,6 +1335,14 @@ function wireJourneyPanel() {
     panel.setAttribute('aria-hidden', 'true');
     toggle.classList.remove('active');
   });
+  trapFocus(panel, () => {
+    // Standalone mode (opened directly from the start screen, no map
+    // behind it) has no simple "close" — the back button reloads instead —
+    // so Escape only applies to the slide-in-over-map case.
+    if (!panel.classList.contains('standalone') && panel.classList.contains('open')) {
+      closeBtn.click();
+    }
+  });
 
   wireJourneyAutocomplete('from');
   wireJourneyAutocomplete('to');
@@ -1333,6 +1385,269 @@ function wireJourneyPanel() {
 }
 
 // ==========================================================================
+// Generic two-stage delete confirmation — first click turns the button into
+// a "Säker?" confirm state for 3s, second click within that window actually
+// deletes. Avoids a jarring native confirm() popup while still preventing
+// accidental taps from silently losing a saved item.
+// ==========================================================================
+function wireConfirmDelete(btn, onConfirm) {
+  let confirming = false;
+  let resetTimer = null;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!confirming) {
+      confirming = true;
+      btn.textContent = 'Säker?';
+      btn.classList.add('confirm');
+      resetTimer = setTimeout(() => {
+        confirming = false;
+        btn.textContent = '✕';
+        btn.classList.remove('confirm');
+      }, 3000);
+    } else {
+      clearTimeout(resetTimer);
+      onConfirm();
+    }
+  });
+}
+
+// ==========================================================================
+// Saved stations — separate from saved routes, tied to the board's ☆ button
+// ==========================================================================
+const SAVED_STATIONS_KEY = 'sparlage_saved_stations';
+
+function loadSavedStations() {
+  try {
+    return JSON.parse(localStorage.getItem(SAVED_STATIONS_KEY)) || [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedStations(stations) {
+  try {
+    localStorage.setItem(SAVED_STATIONS_KEY, JSON.stringify(stations));
+  } catch (err) {
+    console.warn('[saved-stations] could not save (localStorage full?)', err);
+  }
+}
+
+// ==========================================================================
+// Recently viewed stations — separate from saved (explicit) stations,
+// automatically tracked every time a board is opened, capped to the most
+// recent 8, no duplicates.
+// ==========================================================================
+const RECENT_STATIONS_KEY = 'sparlage_recent_stations';
+const RECENT_STATIONS_MAX = 8;
+
+function loadRecentStations() {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_STATIONS_KEY)) || [];
+  } catch {
+    return [];
+  }
+}
+
+function pushRecentStation(site) {
+  try {
+    let recents = loadRecentStations().filter(s => s.id !== site.id);
+    recents.unshift({ id: site.id, name: site.name });
+    recents = recents.slice(0, RECENT_STATIONS_MAX);
+    localStorage.setItem(RECENT_STATIONS_KEY, JSON.stringify(recents));
+    renderStartQuickAccess();
+  } catch (err) {
+    console.warn('[recent-stations] could not save (localStorage full?)', err);
+  }
+}
+
+// ==========================================================================
+// Share links — deep links that reopen a specific station's board or a
+// specific journey search. ?station=<siteId> or ?journey=<base64 JSON>.
+// ==========================================================================
+function buildStationShareUrl(site) {
+  const url = new URL(location.href);
+  url.search = '';
+  url.searchParams.set('station', site.id);
+  return url.toString();
+}
+
+function buildJourneyShareUrl(from, to) {
+  const url = new URL(location.href);
+  url.search = '';
+  const payload = btoa(unescape(encodeURIComponent(JSON.stringify({ from, to }))));
+  url.searchParams.set('journey', payload);
+  return url.toString();
+}
+
+// Copies to clipboard, or uses the native share sheet on mobile if
+// available — falls back gracefully either way, never leaves the person
+// with no feedback that something happened.
+async function shareUrl(url, title) {
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, url });
+      return;
+    } catch (err) {
+      if (err.name === 'AbortError') return; // person cancelled the share sheet, not an error
+      console.warn('[share] navigator.share failed, falling back to clipboard', err);
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    alert('Länk kopierad!');
+  } catch (err) {
+    console.error('[share] clipboard write failed', err);
+    prompt('Kopiera länken manuellt:', url);
+  }
+}
+
+// ==========================================================================
+// Deep link handling — parses ?station=<id> or ?journey=<base64> on boot
+// and auto-launches the relevant flow, skipping the start screen.
+// ==========================================================================
+function parseDeepLink() {
+  const params = new URLSearchParams(location.search);
+  if (params.has('station')) {
+    return { type: 'station', siteId: params.get('station') };
+  }
+  if (params.has('journey')) {
+    try {
+      const decoded = JSON.parse(decodeURIComponent(escape(atob(params.get('journey')))));
+      if (decoded.from && decoded.to) return { type: 'journey', from: decoded.from, to: decoded.to };
+    } catch (err) {
+      console.warn('[deep-link] could not parse ?journey= payload', err);
+    }
+  }
+  return null;
+}
+
+async function handleDeepLink(link) {
+  if (link.type === 'station') {
+    await startMapMode();
+    // Sites load asynchronously as part of startMapMode(); the station id
+    // from the URL is compared as a string since query params are always
+    // strings, while site.id from the API may be a number.
+    const entry = [...stationMarkers.values()].find(({ site }) => String(site.id) === String(link.siteId));
+    if (entry) {
+      const latlng = getSiteLatLng(entry.site);
+      if (latlng) map.setView(latlng, 15);
+      openBoard(entry.site);
+    } else {
+      console.warn('[deep-link] station id from URL not found among loaded stations:', link.siteId);
+    }
+  } else if (link.type === 'journey') {
+    startJourneyMode();
+    journeyFrom = link.from;
+    journeyTo = link.to;
+    document.getElementById('journey-from').value = link.from.label || '';
+    document.getElementById('journey-to').value = link.to.label || '';
+    syncClearButtonVisibility('journey-from');
+    syncClearButtonVisibility('journey-to');
+    searchTrips();
+  }
+}
+
+// ==========================================================================
+// Start screen quick access — saved routes, saved stations, recently viewed
+// ==========================================================================
+function renderStartQuickAccess() {
+  const wrap = document.getElementById('start-quick-access');
+  const routes = loadSavedRoutes();
+  const stations = loadSavedStations();
+  const recents = loadRecentStations();
+
+  renderStartQuickSection('start-quick-saved-routes', routes, (route) => ({
+    icon: '🧭',
+    text: `${route.from.label} → ${route.to.label}`,
+    onClick: () => {
+      startJourneyMode();
+      journeyFrom = route.from;
+      journeyTo = route.to;
+      document.getElementById('journey-from').value = route.from.label;
+      document.getElementById('journey-to').value = route.to.label;
+      syncClearButtonVisibility('journey-from');
+      syncClearButtonVisibility('journey-to');
+      searchTrips();
+    },
+  }));
+
+  renderStartQuickSection('start-quick-saved-stations', stations, (station) => ({
+    icon: '⭐',
+    text: station.name,
+    onClick: () => handleDeepLink({ type: 'station', siteId: station.id }),
+  }));
+
+  renderStartQuickSection('start-quick-recent-stations', recents, (station) => ({
+    icon: '🕓',
+    text: station.name,
+    onClick: () => handleDeepLink({ type: 'station', siteId: station.id }),
+  }));
+
+  wrap.hidden = !(routes.length || stations.length || recents.length);
+}
+
+function renderStartQuickSection(sectionId, items, describe) {
+  const section = document.getElementById(sectionId);
+  const list = section.querySelector('.start-quick-list');
+  if (!items.length) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  list.innerHTML = '';
+  items.forEach(item => {
+    const { icon, text, onClick } = describe(item);
+    const row = document.createElement('div');
+    row.className = 'start-quick-item';
+    row.innerHTML = `<span class="start-quick-item-icon">${icon}</span><span class="start-quick-item-text">${escapeHtml(text)}</span>`;
+    row.addEventListener('click', onClick);
+    list.appendChild(row);
+  });
+}
+
+// ==========================================================================
+// Focus trap — keeps Tab/Shift+Tab cycling within a container while it's
+// the active modal/panel, and closes it on Escape. Applied to the setup
+// modal (a true backdrop-blocking modal) and the departure board.
+// ==========================================================================
+function trapFocus(container, onClose) {
+  container.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      onClose();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+
+    const focusable = container.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+}
+
+// ==========================================================================
+// Offline state — network-first service worker already handles the actual
+// fetch fallback; this is purely the visible "you're offline" indicator.
+// ==========================================================================
+function wireOfflineBanner() {
+  const banner = document.getElementById('offline-banner');
+  const update = () => banner.hidden = navigator.onLine;
+  window.addEventListener('online', update);
+  window.addEventListener('offline', update);
+  update();
+}
+
+// ==========================================================================
 // Saved routes — persisted From/To pairs for one-tap re-search
 // ==========================================================================
 const SAVED_ROUTES_KEY = 'sparlage_saved_routes';
@@ -1369,11 +1684,20 @@ function wireSavedRoutes() {
     routes.push({ id: Date.now(), from: journeyFrom, to: journeyTo });
     writeSavedRoutes(routes);
     renderSavedRoutes();
+    renderStartQuickAccess();
 
     const btn = document.getElementById('journey-save-route');
     btn.textContent = '★';
     btn.classList.add('saved');
     setTimeout(() => { btn.textContent = '☆'; btn.classList.remove('saved'); }, 1200);
+  });
+
+  document.getElementById('journey-share-route').addEventListener('click', () => {
+    if (!journeyFrom || !journeyTo) {
+      alert('Välj både en start- och slutpunkt innan du delar resan.');
+      return;
+    }
+    shareUrl(buildJourneyShareUrl(journeyFrom, journeyTo), `${journeyFrom.label} → ${journeyTo.label}`);
   });
 }
 
@@ -1406,11 +1730,11 @@ function renderSavedRoutes() {
       syncClearButtonVisibility('journey-to');
       searchTrips();
     });
-    row.querySelector('.saved-route-remove').addEventListener('click', (e) => {
-      e.stopPropagation();
+    wireConfirmDelete(row.querySelector('.saved-route-remove'), () => {
       const updated = loadSavedRoutes().filter(r => r.id !== route.id);
       writeSavedRoutes(updated);
       renderSavedRoutes();
+      renderStartQuickAccess();
     });
     list.appendChild(row);
   });

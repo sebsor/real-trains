@@ -15,11 +15,12 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="style.css?v=29">
+<link rel="stylesheet" href="style.css?v=30">
 </head>
 <body>
 
-<span id="app-version">v13</span>
+<span id="app-version">v14</span>
+<div id="offline-banner" hidden>📡 Du är offline — visar cachad data där det går</div>
 
 <!-- Start screen: choose map view or journey planner before anything loads -->
 <div id="start-screen">
@@ -38,6 +39,20 @@
         <span class="start-choice-title">Res A → B</span>
         <span class="start-choice-desc">Hitta resor mellan adresser eller stationer</span>
       </button>
+    </div>
+    <div id="start-quick-access" hidden>
+      <div id="start-quick-saved-routes" class="start-quick-section" hidden>
+        <p class="start-quick-label">SPARADE RESOR</p>
+        <div class="start-quick-list"></div>
+      </div>
+      <div id="start-quick-saved-stations" class="start-quick-section" hidden>
+        <p class="start-quick-label">SPARADE STATIONER</p>
+        <div class="start-quick-list"></div>
+      </div>
+      <div id="start-quick-recent-stations" class="start-quick-section" hidden>
+        <p class="start-quick-label">SENAST VISADE</p>
+        <div class="start-quick-list"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -102,7 +117,11 @@
       <p id="board-eyebrow">AVGÅNGAR</p>
       <h2 id="board-station-name">—</h2>
     </div>
-    <button id="board-close" type="button" aria-label="Stäng">✕</button>
+    <div id="board-header-actions">
+      <button id="board-share" type="button" title="Dela länk">🔗</button>
+      <button id="board-save" type="button" title="Spara station">☆</button>
+      <button id="board-close" type="button" aria-label="Stäng">✕</button>
+    </div>
   </div>
   <div id="board-body">
     <p id="board-empty">Klicka på en station på kartan för att se avgångar.</p>
@@ -173,6 +192,7 @@
       <div class="journey-submit-row">
         <button type="submit" id="journey-submit" class="btn-primary">Sök resor</button>
         <button type="button" id="journey-save-route" title="Spara den här resan">☆</button>
+        <button type="button" id="journey-share-route" title="Dela länk">🔗</button>
       </div>
     </form>
     <div id="journey-legend">
@@ -218,6 +238,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/protobufjs/8.0.2/protobuf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.5.4/papaparse.min.js"></script>
-<script src="app.js?v=37"></script>
+<script src="app.js?v=38"></script>
 </body>
 </html>
