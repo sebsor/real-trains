@@ -259,20 +259,20 @@ body{
 #start-illustration{position:absolute;inset:0;width:100%;height:100%;display:block;}
 #start-hero-text{
   position:absolute;inset:0;
-  display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
-  padding-bottom:14px;text-align:center;
+  display:flex;align-items:center;justify-content:center;
 }
 #start-logo{
-  font-size:26px;color:var(--amber);display:block;margin-bottom:3px;
-  filter:drop-shadow(0 0 12px rgba(255,183,3,.6));
+  font-size:34px;color:var(--amber);display:block;
+  filter:drop-shadow(0 0 14px rgba(255,183,3,.6));
 }
-#start-hero-text h1{font-size:21px;margin:0;font-weight:600;color:#fff;letter-spacing:-.01em;}
 
 /* Clean content section below the illustration — kept on a solid
    background rather than continuing the illustration behind it, so the
    interactive choices/quick-access stay easy to read and consistent with
-   the rest of the app's UI chrome. */
+   the rest of the app's UI chrome. Title now lives here too, rather than
+   overlaid on the illustration where it competed with the artwork. */
 #start-content{padding:16px 18px 18px;overflow-y:auto;text-align:center;}
+#start-title{font-size:21px;margin:0 0 2px;font-weight:600;color:var(--text);letter-spacing:-.01em;}
 #start-subtitle{color:var(--muted);font-size:11px;margin:0 0 12px;font-family:'JetBrains Mono',monospace;}
 
 /* Mobile-first: stacked by default, switches to side-by-side once there's
@@ -331,8 +331,8 @@ body{
   #start-frame{border-radius:28px;}
   #start-hero{height:160px;}
   #start-hero-text{padding-bottom:22px;}
-  #start-logo{font-size:32px;margin-bottom:4px;}
-  #start-hero-text h1{font-size:26px;}
+  #start-logo{font-size:42px;}
+  #start-title{font-size:26px;margin-bottom:4px;}
   #start-content{padding:20px 24px 24px;}
   #start-subtitle{font-size:12px;margin-bottom:14px;}
   #start-choices{flex-direction:row;gap:12px;}
