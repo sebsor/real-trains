@@ -1420,6 +1420,32 @@ function buildJourneyShareUrl(from, to) {
   return url.toString();
 }
 
+// Encodes the exact selected itinerary — not the search criteria — so the
+// recipient sees precisely which train/bus and which times were chosen,
+// unaffected by schedule changes or different results on a later search.
+// Deliberately minimal fields only (not the full ResRobot response, and
+// not each leg's intermediate stop list from passlist) to keep the URL a
+// reasonable length for pasting into chat apps; the shared trip's map tab
+// falls back to a straight origin-to-destination line per leg rather than
+// following intermediate stops, same as the "coordinates unavailable" case
+// already handled in renderTripMap().
+function buildTripShareUrl(trip) {
+  const legs = ((trip.LegList && trip.LegList.Leg) || []).map(leg => ({
+    type: leg.type,
+    name: leg.name,
+    dist: leg.dist,
+    duration: leg.duration,
+    Product: leg.Product && leg.Product.map(p => ({ catCode: p.catCode, displayNumber: p.displayNumber, line: p.line })),
+    Origin: leg.Origin && { name: leg.Origin.name, time: leg.Origin.time, lat: leg.Origin.lat, lon: leg.Origin.lon, track: leg.Origin.track },
+    Destination: leg.Destination && { name: leg.Destination.name, time: leg.Destination.time, lat: leg.Destination.lat, lon: leg.Destination.lon, track: leg.Destination.track },
+  }));
+  const url = new URL(location.href);
+  url.search = '';
+  const payload = btoa(unescape(encodeURIComponent(JSON.stringify({ duration: trip.duration, legs }))));
+  url.searchParams.set('trip', payload);
+  return url.toString();
+}
+
 // Copies to clipboard, or uses the native share sheet on mobile if
 // available — falls back gracefully either way, never leaves the person
 // with no feedback that something happened.
@@ -1450,6 +1476,14 @@ function parseDeepLink() {
   const params = new URLSearchParams(location.search);
   if (params.has('station')) {
     return { type: 'station', siteId: params.get('station') };
+  }
+  if (params.has('trip')) {
+    try {
+      const decoded = JSON.parse(decodeURIComponent(escape(atob(params.get('trip')))));
+      if (Array.isArray(decoded.legs) && decoded.legs.length) return { type: 'trip', duration: decoded.duration, legs: decoded.legs };
+    } catch (err) {
+      console.warn('[deep-link] could not parse ?trip= payload', err);
+    }
   }
   if (params.has('journey')) {
     try {
@@ -1485,6 +1519,17 @@ async function handleDeepLink(link) {
     syncClearButtonVisibility('journey-from');
     syncClearButtonVisibility('journey-to');
     searchTrips();
+  } else if (link.type === 'trip') {
+    startJourneyMode();
+    const results = document.getElementById('journey-results');
+    results.innerHTML = '<p class="journey-status-msg">📍 Delad resa — visar exakt den valda avgången.</p>';
+    // Reconstructs a trip object compatible with renderTripCard(), which
+    // otherwise expects ResRobot's own response shape — reuses all the
+    // existing itinerary/map rendering rather than duplicating it.
+    const fakeTrip = { duration: link.duration, LegList: { Leg: link.legs } };
+    const card = renderTripCard(fakeTrip);
+    results.appendChild(card);
+    card.click(); // auto-expand — the whole point of a shared trip link is showing the itinerary immediately
   }
 }
 
@@ -1900,8 +1945,12 @@ function renderTripCard(trip) {
   tabs.innerHTML = `
     <button type="button" class="trip-tab active" data-tab="itinerary">Resedetaljer</button>
     <button type="button" class="trip-tab" data-tab="map">Karta</button>
+    <button type="button" class="trip-share-btn" title="Dela den här specifika resan">🔗 Dela</button>
   `;
   detail.appendChild(tabs);
+  tabs.querySelector('.trip-share-btn').addEventListener('click', () => {
+    shareUrl(buildTripShareUrl(trip), `${formatClock(depTime)} → ${formatClock(arrTime)}`);
+  });
 
   const itineraryPane = document.createElement('div');
   itineraryPane.className = 'trip-tab-pane';
