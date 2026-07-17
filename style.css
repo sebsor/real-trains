@@ -480,8 +480,10 @@ body{
 .dep-detail-empty{color:var(--muted);}
 .dep-deviation-text{color:var(--amber);}
 .dep-line{
-  display:inline-block;min-width:2.4em;text-align:center;padding:2px 6px;
-  border-radius:4px;background:var(--panel-2);font-weight:600;
+  display:inline-flex;align-items:center;justify-content:center;gap:3px;
+  width:62px;height:24px;flex:none;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;
+  padding:0 4px;border-radius:4px;background:var(--panel-2);font-weight:600;
 }
 .dep-time{color:var(--amber);font-weight:600;}
 .dep-time.deviation{color:var(--red);}
