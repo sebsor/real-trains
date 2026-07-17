@@ -498,7 +498,7 @@ function initMap() {
     // whole class of bug: zoom now jumps between levels instantly instead.
     zoomAnimation: false,
   }).setView(STOCKHOLM_CENTER, 11);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OpenStreetMap &copy; CARTO · Data: Trafiklab / SL',
     subdomains: 'abcd',
     maxZoom: 19,
@@ -2167,7 +2167,7 @@ function renderTripMapLegend(legs) {
 function renderTripMap(container, legs) {
   const map = L.map(container, { zoomControl: true, attributionControl: false })
     .setView(STOCKHOLM_CENTER, 12);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OpenStreetMap &copy; CARTO',
     subdomains: 'abcd',
     maxZoom: 19,

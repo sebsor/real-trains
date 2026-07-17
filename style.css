@@ -1,32 +1,32 @@
 /* ---- Design tokens ----
-   Background:  #0d1117 (night ops room)
-   Panel:       #151b23
-   Border:      #262e3a
-   Text:        #e6e8eb / muted #7d8590
-   Accent amber (live data, departure times): #ffb703
-   Pendeltåg:   #f4863a
-   Roslagsbanan:#2dd4bf
-   Station:     #64748b
+   Background:  #f6efe1 (soft cream)
+   Panel:       #fffdf8
+   Border:      #e2d4b8
+   Text:        #3a3226 / muted #8a7d68
+   Accent amber (live data, departure times): #e8960a
+   Pendeltåg:   #e08a52
+   Roslagsbanan:#5cb3a0
+   Station:     #a89a7d
    Display face: Space Grotesk / Data face: JetBrains Mono
 ------------------------------- */
 
 :root{
-  --bg:#0d1117;
-  --panel:#151b23;
-  --panel-2:#1b2330;
-  --border:#262e3a;
-  --text:#e6e8eb;
-  --muted:#7d8590;
-  --amber:#ffb703;
-  --pendeltag:#f4863a;
-  --roslagsbanan:#2dd4bf;
-  --metro:#a78bfa;
-  --tram:#fb7185;
-  --bus:#60a5fa;
-  --boat:#22d3ee;
-  --station:#64748b;
-  --red:#ef4444;
-  --green:#22c55e;
+  --bg:#f6efe1;
+  --panel:#fffdf8;
+  --panel-2:#f0e6d4;
+  --border:#e2d4b8;
+  --text:#3a3226;
+  --muted:#8a7d68;
+  --amber:#e8960a;
+  --pendeltag:#e08a52;
+  --roslagsbanan:#5cb3a0;
+  --metro:#9a86c9;
+  --tram:#d98a9a;
+  --bus:#7ba7d9;
+  --boat:#5cb8c4;
+  --station:#a89a7d;
+  --red:#d9694f;
+  --green:#6ba05c;
 }
 
 *{box-sizing:border-box;}
@@ -46,7 +46,7 @@ body{
 
 /* Leaflet dark-mode tuning */
 .leaflet-container{background:var(--bg);font-family:'Space Grotesk',system-ui,sans-serif;}
-.leaflet-control-attribution{background:rgba(13,17,23,.75)!important;color:var(--muted)!important;font-size:10px;}
+.leaflet-control-attribution{background:rgba(255,253,248,.8)!important;color:var(--muted)!important;font-size:10px;}
 .leaflet-control-attribution a{color:var(--muted)!important;}
 .leaflet-control-zoom a{background:var(--panel)!important;color:var(--text)!important;border-color:var(--border)!important;}
 
@@ -58,7 +58,7 @@ body{
 }
 #titlebar-main{
   display:flex;align-items:center;gap:10px;
-  background:rgba(21,27,35,.9);backdrop-filter:blur(6px);
+  background:rgba(255,253,248,.85);backdrop-filter:blur(6px);
   border:1px solid var(--border);border-radius:10px;
   padding:10px 16px;pointer-events:auto;
 }
@@ -79,7 +79,7 @@ body{
   display:flex;align-items:center;gap:8px;pointer-events:auto;
 }
 #journey-toggle{
-  background:rgba(21,27,35,.9);backdrop-filter:blur(6px);
+  background:rgba(255,253,248,.85);backdrop-filter:blur(6px);
   border:1px solid var(--border);border-radius:999px;
   padding:8px 16px;color:var(--text);font-family:'Space Grotesk',system-ui,sans-serif;
   font-size:12px;font-weight:600;cursor:pointer;
@@ -89,7 +89,7 @@ body{
 
 #alerts-toggle{
   position:relative;
-  background:rgba(21,27,35,.9);backdrop-filter:blur(6px);
+  background:rgba(255,253,248,.85);backdrop-filter:blur(6px);
   border:1px solid var(--border);border-radius:999px;
   width:36px;height:36px;font-size:14px;cursor:pointer;
   display:flex;align-items:center;justify-content:center;color:var(--muted);
@@ -136,7 +136,7 @@ body{
 .alert-desc{font-size:12px;color:var(--muted);margin:0;line-height:1.4;}
 
 #station-search-toggle{
-  background:rgba(21,27,35,.9);backdrop-filter:blur(6px);
+  background:rgba(255,253,248,.85);backdrop-filter:blur(6px);
   border:1px solid var(--border);border-radius:999px;
   width:36px;height:36px;font-size:14px;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
@@ -192,7 +192,7 @@ body{
 /* ---- Legend ---- */
 #legend{
   position:absolute;left:16px;bottom:16px;z-index:1000;
-  background:rgba(21,27,35,.9);backdrop-filter:blur(6px);
+  background:rgba(255,253,248,.85);backdrop-filter:blur(6px);
   border:1px solid var(--border);border-radius:10px;
   padding:12px 14px;font-size:12px;color:var(--muted);
   display:flex;flex-direction:column;gap:6px;
@@ -229,7 +229,7 @@ body{
 #app-version{
   position:fixed;bottom:8px;left:8px;z-index:5000;
   font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);
-  background:rgba(13,17,23,.7);padding:2px 6px;border-radius:4px;
+  background:rgba(255,253,248,.75);padding:2px 6px;border-radius:4px;
   pointer-events:none;user-select:none;
 }
 
@@ -652,7 +652,7 @@ body{
 .itin-tram{border-left-color:var(--tram);}
 .itin-bus{border-left-color:var(--bus);}
 .itin-boat{border-left-color:var(--boat);}
-.itin-walk{border-left-color:#3a4150;border-left-style:dashed;}
+.itin-walk{border-left-color:var(--muted);border-left-style:dashed;}
 
 .itin-stop{position:relative;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
 .itin-stop::before{
@@ -666,7 +666,7 @@ body{
 .itin-tram .itin-stop::before{color:var(--tram);}
 .itin-bus .itin-stop::before{color:var(--bus);}
 .itin-boat .itin-stop::before{color:var(--boat);}
-.itin-walk .itin-stop::before{color:#3a4150;}
+.itin-walk .itin-stop::before{color:var(--muted);}
 
 .itin-time{color:var(--amber);font-weight:600;min-width:38px;}
 .itin-name{color:var(--text);font-weight:500;}
