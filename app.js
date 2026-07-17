@@ -47,7 +47,7 @@ const RESROBOT_TRIP_URL = (params, key) => {
 // ResRobot's Product.catCode (1-9) maps roughly onto our existing mode
 // palette, so trip legs can reuse the same colors as the live map.
 const CAT_CODE_TO_MODE = { '5': 'metro', '6': 'tram', '7': 'bus', '8': 'boat' }; // 1,2,4 (various trains) fall back to 'pendeltag' color
-const TRAIN_TRIPS_CACHE_KEY = 'sl_mode_trips_v4'; // bumped from v3 — classifyRoute() now also catches Roslagsbanan branches by line-number pattern, not just name text
+const TRAIN_TRIPS_CACHE_KEY = 'sl_mode_trips_v5'; // bumped from v4 — corrected the Roslagsbanan line-number pattern (27/28/29 with any suffix, not just S)
 const TRAIN_TRIPS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // static schedule data changes daily at most
 const LEGEND_PREFS_KEY = 'sparlage_legend_prefs_v1';
 
@@ -1297,14 +1297,16 @@ function classifyRoute(route) {
   if (haystack.includes('roslagsban')) return 'roslagsbanan';
   if (haystack.includes('pendeltåg') || haystack.includes('pendeltag')) return 'pendeltag';
 
-  // Roslagsbanan's line numbers follow a distinctive two-digit-plus-S
-  // pattern (27S/28S/29S — confirmed from an actual SL app screenshot
-  // earlier in this build), which catches branches whose route_long_name
-  // doesn't literally contain the word "Roslagsbanan" (e.g. a branch
-  // named just "Österskär" or "Kårsta") — this was confirmed live to be
-  // the actual cause of at least one station (Viggbyholm) staying stuck
-  // at the generic tram classification instead of being corrected.
-  if (/^\d{2}s$/i.test((route.route_short_name || '').trim())) return 'roslagsbanan';
+  // Confirmed via web search (not guessed): Roslagsbanan's three branches
+  // are specifically lines 27 (Kårsta), 28 (Österskär), and 29 (Näsbypark)
+  // — each with plain and lettered-suffix variants (27/27S/27V,
+  // 28/28S/28X/28V, 29). The S suffix specifically means "express, skips
+  // some stops" (not a universal Roslagsbanan marker — a plain "27" or
+  // "28" with no letter is just as much Roslagsbanan). Matching only
+  // 27/28/29 specifically, not any 2-digit number, since SL has unrelated
+  // bus/boat lines that also use 2-digit numbers (e.g. line 40 exists as
+  // both a Pendeltåg line and, separately, a boat line).
+  if (/^(27|28|29)[a-z]?$/i.test((route.route_short_name || '').trim())) return 'roslagsbanan';
 
   const rt = parseInt(route.route_type, 10);
   if (Number.isNaN(rt)) return null;
