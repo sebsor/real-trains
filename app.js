@@ -47,7 +47,7 @@ const RESROBOT_TRIP_URL = (params, key) => {
 // ResRobot's Product.catCode (1-9) maps roughly onto our existing mode
 // palette, so trip legs can reuse the same colors as the live map.
 const CAT_CODE_TO_MODE = { '5': 'metro', '6': 'tram', '7': 'bus', '8': 'boat' }; // 1,2,4 (various trains) fall back to 'pendeltag' color
-const TRAIN_TRIPS_CACHE_KEY = 'sl_mode_trips_v5'; // bumped from v4 — corrected the Roslagsbanan line-number pattern (27/28/29 with any suffix, not just S)
+const TRAIN_TRIPS_CACHE_KEY = 'sl_mode_trips_v6'; // bumped from v5 — added lineNameToRouteIds mapping for the "follow a line" alerts feature
 const TRAIN_TRIPS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // static schedule data changes daily at most
 const LEGEND_PREFS_KEY = 'sparlage_legend_prefs_v1';
 
@@ -166,6 +166,7 @@ let journeyFrom = null; // { label, lat, lon, extId? } — extId set only when a
 let journeyTo = null;
 let trainTripMap = {};          // trip_id -> mode, from static GTFS
 let routeIdToMode = {};         // route_id -> mode, from static GTFS — used to group alerts by vehicle type
+let lineNameToRouteIds = {};    // route_short_name (e.g. "28S") -> [route_id, ...] — used to match followed lines against alert route_ids
 let loadTrainTripClassificationPromise = null; // shared, so map mode doesn't re-trigger a second fetch of the same data
 let railAreaModeOverride = new Map(); // stop_area id -> 'pendeltag' | 'roslagsbanan', authoritative (from stop_times.txt join)
 let stopPointsCache = null;     // cached /v1/stop-points response, shared between station classification and the override join
@@ -883,11 +884,26 @@ function renderDepartureRow(dep) {
   const mode = dep.mode; // null if unrecognized — badge just falls back to .dep-line's default neutral styling
   const icon = mode ? (MODE_ICONS[mode] || '') : '';
   const modeStyle = mode ? ` style="background:var(--${mode});color:#0d1117"` : '';
+  const isFollowed = dep.line !== '?' && loadFollowedLines().has(dep.line);
   tr.innerHTML = `
-    <td><span class="dep-line"${modeStyle}>${icon ? `${icon} ` : ''}${escapeHtml(dep.line)}</span></td>
+    <td>
+      <span class="dep-line"${modeStyle}>${icon ? `${icon} ` : ''}${escapeHtml(dep.line)}</span>
+      ${dep.line !== '?' ? `<button type="button" class="dep-follow-btn ${isFollowed ? 'following' : ''}" data-line="${escapeHtml(dep.line)}" title="${isFollowed ? 'Sluta följa' : 'Följ linje för avisering om trafikstörningar'}">${isFollowed ? '🔔' : '🔕'}</button>` : ''}
+    </td>
     <td>${escapeHtml(dep.destination)}</td>
     <td class="dep-time ${dep.deviation ? 'deviation' : ''}" data-time="${escapeHtml(dep.time || '')}">${timeLabel}</td>
   `;
+
+  const followBtn = tr.querySelector('.dep-follow-btn');
+  if (followBtn) {
+    followBtn.addEventListener('click', (e) => {
+      e.stopPropagation(); // don't also trigger the row's own expand/select toggle
+      const nowFollowing = toggleFollowedLine(followBtn.dataset.line);
+      followBtn.classList.toggle('following', nowFollowing);
+      followBtn.textContent = nowFollowing ? '🔔' : '🔕';
+      followBtn.title = nowFollowing ? 'Sluta följa' : 'Följ linje för avisering om trafikstörningar';
+    });
+  }
 
   const detailTr = document.createElement('tr');
   detailTr.className = 'dep-detail-row';
@@ -983,6 +999,7 @@ async function fetchServiceAlerts() {
         header: firstTranslation(a.headerText),
         description: firstTranslation(a.descriptionText),
         modes: resolveAlertModes(a.informedEntity),
+        routeIds: (a.informedEntity || []).map(e => e.routeId).filter(Boolean),
       }))
       .filter(a => a.header);
 
@@ -1015,9 +1032,14 @@ function resolveAlertModes(informedEntity) {
 
 function renderAlertsBadge() {
   const count = activeAlerts.length;
+  const followedCount = getFollowedLineAlerts().length;
   document.querySelectorAll('.alerts-toggle-btn').forEach(btn => {
     btn.querySelector('.alerts-count').textContent = count > 0 ? count : '';
     btn.classList.toggle('has-alerts', count > 0);
+    // A followed line having an active alert is more urgent than a generic
+    // alert elsewhere in the network — visually distinct so it doesn't get
+    // lost among mode-wide disruptions you don't personally care about.
+    btn.classList.toggle('has-followed-alert', followedCount > 0);
   });
 }
 
@@ -1048,9 +1070,45 @@ function wireAlertsPanel() {
 function renderAlertsList() {
   const list = document.getElementById('alerts-list');
   list.innerHTML = '';
+
+  const followed = loadFollowedLines();
+  if (followed.size) {
+    const manageRow = document.createElement('div');
+    manageRow.className = 'alert-manage-followed';
+    manageRow.innerHTML = `<span class="alert-manage-label">Följer:</span>` +
+      [...followed].map(line => `<button type="button" class="followed-line-chip" data-line="${escapeHtml(line)}">${escapeHtml(line)} ✕</button>`).join('');
+    manageRow.querySelectorAll('.followed-line-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        toggleFollowedLine(chip.dataset.line);
+        renderAlertsList(); // re-render to drop the chip and refresh the followed-alerts section below
+      });
+    });
+    list.appendChild(manageRow);
+  }
+
   if (!activeAlerts.length) {
-    list.innerHTML = '<p class="alerts-empty">Inga aktiva trafikstörningar just nu.</p>';
+    const empty = document.createElement('p');
+    empty.className = 'alerts-empty';
+    empty.textContent = 'Inga aktiva trafikstörningar just nu.';
+    list.appendChild(empty);
     return;
+  }
+
+  const followedAlerts = getFollowedLineAlerts();
+  if (followedAlerts.length) {
+    const section = document.createElement('div');
+    section.className = 'alert-followed-section';
+    section.innerHTML = `<p class="alert-followed-label">🔔 DINA FÖLJDA LINJER</p>`;
+    followedAlerts.forEach(alert => {
+      const item = document.createElement('div');
+      item.className = 'alert-item alert-item-followed';
+      item.innerHTML = `
+        <p class="alert-header">⚠ ${escapeHtml(alert.header)} <span class="alert-followed-tag">${escapeHtml(alert.matchedLines.join(', '))}</span></p>
+        ${alert.description ? `<p class="alert-desc">${escapeHtml(alert.description)}</p>` : ''}
+      `;
+      section.appendChild(item);
+    });
+    list.appendChild(section);
   }
 
   // Group by mode — an alert with multiple affected modes appears in each
@@ -1171,6 +1229,7 @@ async function loadTrainTripClassification() {
     trainTripMap = cached.tripMap;
     railAreaModeOverride = new Map(Object.entries(cached.areaOverride).map(([k, v]) => [Number(k), v]));
     routeIdToMode = cached.routeMode || {};
+    lineNameToRouteIds = cached.lineMap || {};
     console.log(`[gtfs-static] using cached classification (${Object.keys(trainTripMap).length} trips, ${railAreaModeOverride.size} station areas, ${Object.keys(routeIdToMode).length} routes)`);
     applyRailOverrides();
     return;
@@ -1194,12 +1253,19 @@ async function loadTrainTripClassification() {
     const trips = Papa.parse(tripsCsv, { header: true, skipEmptyLines: true }).data;
 
     const routeClassification = new Map(); // route_id -> 'pendeltag' | 'roslagsbanan' | other modes
+    const lineNameMap = {}; // route_short_name -> [route_id, ...]
     routes.forEach(r => {
       const kind = classifyRoute(r);
       if (kind) routeClassification.set(r.route_id, kind);
+      const shortName = (r.route_short_name || '').trim();
+      if (shortName) {
+        if (!lineNameMap[shortName]) lineNameMap[shortName] = [];
+        lineNameMap[shortName].push(r.route_id);
+      }
     });
     console.log(`[gtfs-static] ${routeClassification.size} classified routes found in routes.txt`);
     routeIdToMode = Object.fromEntries(routeClassification);
+    lineNameToRouteIds = lineNameMap;
 
     const map = {};
     trips.forEach(t => {
@@ -1215,7 +1281,7 @@ async function loadTrainTripClassification() {
     const stopTimesCsv = await zip.file('stop_times.txt').async('string');
     await buildRailAreaOverrides(stopTimesCsv, map);
 
-    await writeTrainTripCache(map, railAreaModeOverride, routeIdToMode);
+    await writeTrainTripCache(map, railAreaModeOverride, routeIdToMode, lineNameToRouteIds);
     applyRailOverrides();
   } catch (err) {
     console.error('[gtfs-static] failed to load/parse static GTFS — vehicles will show as "other", station rail/tram split may be imprecise', err);
@@ -1324,20 +1390,20 @@ async function readTrainTripCache() {
   try {
     const cached = await idbGet(TRAIN_TRIPS_CACHE_KEY);
     if (!cached) return null;
-    const { fetchedAt, tripMap, areaOverride, routeMode } = cached;
+    const { fetchedAt, tripMap, areaOverride, routeMode, lineMap } = cached;
     if (Date.now() - fetchedAt > TRAIN_TRIPS_CACHE_MAX_AGE_MS) return null;
     if (!tripMap || !areaOverride) return null; // stale shape from an older cache version
-    return { tripMap, areaOverride, routeMode: routeMode || {} };
+    return { tripMap, areaOverride, routeMode: routeMode || {}, lineMap: lineMap || {} };
   } catch (err) {
     console.warn('[gtfs-static] could not read cached classification', err);
     return null;
   }
 }
 
-async function writeTrainTripCache(tripMap, areaOverrideMap, routeMode) {
+async function writeTrainTripCache(tripMap, areaOverrideMap, routeMode, lineMap) {
   try {
     const areaOverride = Object.fromEntries(areaOverrideMap);
-    await idbSet(TRAIN_TRIPS_CACHE_KEY, { fetchedAt: Date.now(), tripMap, areaOverride, routeMode });
+    await idbSet(TRAIN_TRIPS_CACHE_KEY, { fetchedAt: Date.now(), tripMap, areaOverride, routeMode, lineMap });
   } catch (err) {
     console.warn('[gtfs-static] could not cache classification', err);
   }
@@ -1468,6 +1534,62 @@ function writeSavedStations(stations) {
   } catch (err) {
     console.warn('[saved-stations] could not save (localStorage full?)', err);
   }
+}
+
+// ==========================================================================
+// Followed lines — subscribe to a specific line (not just a mode) for
+// Trafikläge alerts. Toggled from the departure board's line badges.
+// ==========================================================================
+const FOLLOWED_LINES_KEY = 'sparlage_followed_lines';
+
+function loadFollowedLines() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(FOLLOWED_LINES_KEY)) || []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeFollowedLines(lines) {
+  try {
+    localStorage.setItem(FOLLOWED_LINES_KEY, JSON.stringify([...lines]));
+  } catch (err) {
+    console.warn('[followed-lines] could not save (localStorage full?)', err);
+  }
+}
+
+function toggleFollowedLine(lineName) {
+  const lines = loadFollowedLines();
+  if (lines.has(lineName)) lines.delete(lineName);
+  else lines.add(lineName);
+  writeFollowedLines(lines);
+  renderAlertsBadge(); // re-check whether any active alert now matches a followed line
+  return lines.has(lineName);
+}
+
+// Resolves which alerts affect a followed line — joins the followed line
+// name (e.g. "28S") through lineNameToRouteIds (built from routes.txt) to
+// get its route_id(s), then checks each alert's informed_entity for a
+// match. Same route_id-based matching already used for mode grouping,
+// just checked against specific followed lines instead of all routes for
+// a mode.
+function getFollowedLineAlerts() {
+  const followed = loadFollowedLines();
+  if (!followed.size) return [];
+  const followedRouteIds = new Set();
+  followed.forEach(line => {
+    (lineNameToRouteIds[line] || []).forEach(id => followedRouteIds.add(id));
+  });
+  if (!followedRouteIds.size) return [];
+
+  return activeAlerts
+    .map(alert => ({
+      ...alert,
+      matchedLines: [...followed].filter(line =>
+        (lineNameToRouteIds[line] || []).some(id =>
+          (alert.routeIds || []).includes(id))),
+    }))
+    .filter(a => a.matchedLines.length > 0);
 }
 
 // ==========================================================================
