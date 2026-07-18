@@ -488,7 +488,7 @@ function cleanupStaleLocalStorageKeys() {
 
 function initMap() {
   map = L.map('map', {
-    zoomControl: true,
+    zoomControl: false, // default position (top-left) collides with our custom titlebar there — re-added below at bottom-right instead
     attributionControl: true,
     // Leaflet's smooth zoom uses a CSS transform transition, which can get
     // interrupted/frozen mid-animation on a page with thousands of marker
@@ -499,6 +499,7 @@ function initMap() {
     // whole class of bug: zoom now jumps between levels instantly instead.
     zoomAnimation: false,
   }).setView(STOCKHOLM_CENTER, 11);
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OpenStreetMap &copy; CARTO · Data: Trafiklab / SL',
     subdomains: 'abcd',
