@@ -46,7 +46,7 @@ const RESROBOT_TRIP_URL = (params, key) => {
 };
 // ResRobot's Product.catCode (1-9) maps roughly onto our existing mode
 // palette, so trip legs can reuse the same colors as the live map.
-const CAT_CODE_TO_MODE = { '5': 'metro', '6': 'tram', '7': 'bus', '8': 'boat' }; // 1,2,4 (various trains) fall back to 'pendeltag' color
+const CAT_CODE_TO_MODE = { '5': 'metro', '6': 'tram', '7': 'bus', '8': 'boat' }; // 1,2,4 (various trains) need further resolution — see resolveResRobotMode()
 const TRAIN_TRIPS_CACHE_KEY = 'sl_mode_trips_v6'; // bumped from v5 — added lineNameToRouteIds mapping for the "follow a line" alerts feature
 const TRAIN_TRIPS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // static schedule data changes daily at most
 const LEGEND_PREFS_KEY = 'sparlage_legend_prefs_v1';
@@ -2288,9 +2288,31 @@ function minutesBetween(hhmmss1, hhmmss2) {
   return (h2 * 60 + m2) - (h1 * 60 + m1);
 }
 
-function renderTransitLeg(leg) {
+// ResRobot's catCode alone can't distinguish Pendeltåg from Roslagsbanan
+// (both fall under the same generic "train" category codes). Reuses the
+// same verified line-number pattern built for the GTFS static
+// classification (27/28/29 + optional letter = Roslagsbanan) to resolve
+// most of these correctly. Whatever's left after that check is genuinely
+// ambiguous — confirmed live (a Roslagsbanan "28" leg showed as
+// "Pendeltåg") that guessing pendeltåg by default was actively wrong
+// often enough to matter, so those cases are flagged `ambiguous: true`
+// and should display as the neutral "Tåg" rather than a specific,
+// possibly-incorrect train type. Color/icon still fall back to pendeltåg's
+// (a reasonable generic "train" visual) since introducing a whole separate
+// neutral-train color for this one case isn't worth the added complexity.
+function resolveResRobotMode(leg) {
   const catCode = leg.Product && leg.Product[0] && leg.Product[0].catCode;
-  const mode = CAT_CODE_TO_MODE[catCode] || 'pendeltag';
+  if (CAT_CODE_TO_MODE[catCode]) return { mode: CAT_CODE_TO_MODE[catCode], ambiguous: false };
+
+  const lineLabel = (leg.Product && leg.Product[0] && (leg.Product[0].displayNumber || leg.Product[0].line)) || leg.name || '';
+  if (/^(27|28|29)[a-z]?$/i.test(lineLabel.trim())) return { mode: 'roslagsbanan', ambiguous: false };
+
+  return { mode: 'pendeltag', ambiguous: true };
+}
+
+function renderTransitLeg(leg) {
+  const { mode, ambiguous } = resolveResRobotMode(leg);
+  const modeLabel = ambiguous ? 'Tåg' : (MODE_LABELS_SV[mode] || '');
   const lineLabel = (leg.Product && leg.Product[0] && (leg.Product[0].displayNumber || leg.Product[0].line)) || leg.name || '?';
   const originTrack = leg.Origin && (leg.Origin.track || leg.Origin.rtTrack);
   const destTrack = leg.Destination && (leg.Destination.track || leg.Destination.rtTrack);
@@ -2305,7 +2327,7 @@ function renderTransitLeg(leg) {
     </div>
     <div class="itin-line-info">
       <span class="itin-badge dot-${mode}">${MODE_ICONS[mode] || ''} ${escapeHtml(lineLabel)}</span>
-      <span class="itin-line-desc">${MODE_LABELS_SV[mode] || ''} mot ${escapeHtml((leg.Destination && leg.Destination.name) || '')}</span>
+      <span class="itin-line-desc">${modeLabel} mot ${escapeHtml((leg.Destination && leg.Destination.name) || '')}</span>
     </div>
     <div class="itin-stop">
       <span class="itin-time">${formatClock(leg.Destination && leg.Destination.time)}</span>
@@ -2356,19 +2378,20 @@ const MODE_ICONS = {
 // Only lists the modes actually present in this specific trip, rather than
 // a full 6-mode legend every time — more relevant for a 2-3 leg journey.
 function renderTripMapLegend(legs) {
-  const modesUsed = new Set();
+  const modesUsed = new Map(); // mode -> ambiguous
   let hasWalk = false;
   legs.forEach(leg => {
     if (leg.type === 'WALK' || leg.type === 'TRSF') { hasWalk = true; return; }
-    const catCode = leg.Product && leg.Product[0] && leg.Product[0].catCode;
-    modesUsed.add(CAT_CODE_TO_MODE[catCode] || 'pendeltag');
+    const { mode, ambiguous } = resolveResRobotMode(leg);
+    modesUsed.set(mode, ambiguous);
   });
 
   const legend = document.createElement('div');
   legend.className = 'trip-map-legend';
   let html = '';
-  modesUsed.forEach(mode => {
-    html += `<span class="journey-legend-item"><span class="dot dot-${mode}"></span>${MODE_LABELS_SV[mode] || mode}</span>`;
+  modesUsed.forEach((ambiguous, mode) => {
+    const label = ambiguous ? 'Tåg' : (MODE_LABELS_SV[mode] || mode);
+    html += `<span class="journey-legend-item"><span class="dot dot-${mode}"></span>${label}</span>`;
   });
   if (hasWalk) html += `<span class="journey-legend-item"><span class="dot dot-walk"></span>Gång</span>`;
   legend.innerHTML = html;
@@ -2410,8 +2433,7 @@ function renderTripMap(container, legs) {
     }
 
     const isWalk = leg.type === 'WALK' || leg.type === 'TRSF';
-    const catCode = leg.Product && leg.Product[0] && leg.Product[0].catCode;
-    const mode = isWalk ? null : (CAT_CODE_TO_MODE[catCode] || 'pendeltag');
+    const mode = isWalk ? null : resolveResRobotMode(leg).mode;
     const color = mode
       ? getComputedStyle(document.documentElement).getPropertyValue(`--${mode}`).trim()
       : '#7d8590';
@@ -2457,8 +2479,7 @@ function renderLegChip(leg) {
     chip.textContent = leg.dist ? `🚶 Gå ${leg.dist} m` : '🚶 Gå';
     return chip;
   }
-  const catCode = leg.Product && leg.Product[0] && leg.Product[0].catCode;
-  const mode = CAT_CODE_TO_MODE[catCode] || 'pendeltag';
+  const mode = resolveResRobotMode(leg).mode;
   const lineLabel = (leg.Product && leg.Product[0] && (leg.Product[0].displayNumber || leg.Product[0].line)) || leg.name || '?';
 
   chip.className = 'trip-leg';
