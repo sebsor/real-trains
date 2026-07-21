@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Spårläge — SL stations, departures, journey planner & Trafikläge
+   SSL — SL stations, departures, journey planner & Trafikläge
    (live vehicle tracking was tried and removed — see git history / past
    conversation for why: SL's feed doesn't reliably report heading for
    several vehicle types, e.g. Roslagsbanan, and after trying several fixes

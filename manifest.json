@@ -1,13 +1,13 @@
 {
-  "name": "Spårläge — Live tågkarta",
-  "short_name": "Spårläge",
-  "description": "Realtidskarta över SL:s pendeltåg och Roslagsbanan med avgångstavla per station",
+  "name": "SSL — Stationer, avgångar & reseplanerare",
+  "short_name": "SSL",
+  "description": "Stationer, avgångar, reseplanerare och trafikläge för SL — Pendeltåg, Roslagsbanan, tunnelbana, buss och båt",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#0d1117",
-  "theme_color": "#0d1117",
+  "background_color": "#f6efe1",
+  "theme_color": "#f6efe1",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
