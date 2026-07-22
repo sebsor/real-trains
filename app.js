@@ -717,10 +717,39 @@ function updateStationMarkerVisibility(marker, mode) {
   }
 }
 
+let visibilityRefreshToken = 0; // lets a newer refresh (another zoom/checkbox change) safely abandon a stale in-progress chunked run
+
+// Processes marker visibility in small batches across animation frames
+// instead of one blocking loop — with ~10k+ bus stops, doing this
+// synchronously in one pass was confirmed live to freeze the page entirely
+// (no repaint, no input handling) until it finished, and gave no feedback
+// that anything was happening at all while it did. Chunking yields back to
+// the browser between batches so it can repaint and handle zoom/pan input
+// in between, and a small indicator now shows while a large batch is
+// still in progress.
 function refreshAllStationVisibility() {
-  for (const { marker, mode } of stationMarkers.values()) {
-    updateStationMarkerVisibility(marker, mode);
+  const myToken = ++visibilityRefreshToken;
+  const entries = [...stationMarkers.values()];
+  const CHUNK_SIZE = 400;
+  const indicator = document.getElementById('station-loading-indicator');
+  let index = 0;
+
+  if (entries.length > CHUNK_SIZE) indicator.removeAttribute('hidden');
+
+  function processChunk() {
+    if (myToken !== visibilityRefreshToken) return; // superseded by a newer refresh — abandon this one
+    const end = Math.min(index + CHUNK_SIZE, entries.length);
+    for (; index < end; index++) {
+      const { marker, mode } = entries[index];
+      updateStationMarkerVisibility(marker, mode);
+    }
+    if (index < entries.length) {
+      requestAnimationFrame(processChunk);
+    } else {
+      indicator.setAttribute('hidden', '');
+    }
   }
+  processChunk();
 }
 
 // ==========================================================================
