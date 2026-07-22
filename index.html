@@ -36,11 +36,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="style.css?v=44">
+<link rel="stylesheet" href="style.css?v=45">
 </head>
 <body>
 
-<span id="app-version">v42</span>
+<span id="app-version">v43</span>
 <div id="offline-banner" hidden>📡 Du är offline — visar cachad data där det går</div>
 
 <!-- Start screen: choose map view or journey planner before anything loads -->
@@ -171,6 +171,7 @@
   <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="tram"><span class="dot dot-tram"></span> Spårvagn</label>
   <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="boat"><span class="dot dot-boat"></span> Båt</label>
   <label class="legend-row"><input type="checkbox" class="mode-checkbox" data-mode="bus"><span class="dot dot-bus"></span> Buss <span class="legend-hint">(nära zoom)</span></label>
+  <a id="legend-map-link" href="https://sl.se/reseplanering/kartor/spartrafikkartor/" target="_blank" rel="noopener">🗺️ Officiell linjekarta</a>
 </div>
 
 <!-- Departure board panel, slides in from the right when a station is clicked -->
@@ -181,6 +182,7 @@
       <h2 id="board-station-name">—</h2>
     </div>
     <div id="board-header-actions">
+      <a id="board-map-link" href="https://sl.se/reseplanering/kartor/spartrafikkartor/" target="_blank" rel="noopener" title="Officiell linjekarta">🗺️</a>
       <button id="board-share" type="button" title="Dela länk">🔗</button>
       <button id="board-save" type="button" title="Spara station">☆</button>
       <button id="board-close" type="button" aria-label="Stäng">✕</button>
@@ -253,6 +255,10 @@
           <input type="date" id="journey-date-value" hidden>
         </div>
       </div>
+      <label class="journey-checkbox-row">
+        <input type="checkbox" id="journey-minimize-walk">
+        <span>Minimera gång (kan ge en långsammare resa)</span>
+      </label>
       <div class="journey-submit-row">
         <button type="submit" id="journey-submit" class="btn-primary">Sök resor</button>
         <button type="button" id="journey-save-route" title="Spara den här resan">☆</button>
@@ -277,6 +283,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.5.4/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
-<script src="app.js?v=54"></script>
+<script src="app.js?v=55"></script>
 </body>
 </html>

@@ -52,7 +52,9 @@ const TRAIN_TRIPS_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // static schedule dat
 const LEGEND_PREFS_KEY = 'sparlage_legend_prefs_v1';
 
 const STOCKHOLM_CENTER = [59.334, 18.06];
+const SL_OFFICIAL_MAP_URL = 'https://sl.se/reseplanering/kartor/spartrafikkartor/'; // SL's own published rail network map — linked out to rather than hosted/redistributed, since transit network maps are typically operator-copyrighted
 const BUS_STATION_MIN_ZOOM = 14; // SL has ~10k+ bus stops — only render up close, or the map is unreadable
+const STATION_LABEL_MIN_ZOOM = 15; // one level past bus visibility — labels need more room than a bare dot to avoid overlapping each other in dense areas
 
 // Confirmed live from window.DEBUG_LAST_STOP_POINTS: stop_area.type takes
 // exactly these 6 values across the whole SL network. RAILWSTN is used as
@@ -177,12 +179,53 @@ let FeedMessageType = null;     // protobufjs decoded type, set once on init (sh
 // ==========================================================================
 // Boot
 // ==========================================================================
+// ==========================================================================
+// Back button handling — the phone's physical/gesture back button uses the
+// browser's History API, which our navigation never touched (the custom
+// in-app back buttons just did a full reload). That meant once past the
+// start screen, there was nothing of the app's own for the hardware back
+// button to go back to — it fell straight through to whatever was open
+// before the app, closing it instead of returning to the start screen.
+// Confirmed as a real complaint from testers.
+//
+// Fixes this with a minimal two-level model: the start screen is the base
+// history entry, and entering map or journey mode pushes one entry on top
+// of it. Pressing back from there triggers the same reload-based teardown
+// already used by the in-app back buttons — full reload rather than trying
+// to safely tear down the live map/polling state in place — landing back
+// on a genuinely fresh start screen (also correctly stripping any deep-link
+// query string, so going back from a shared-link launch doesn't just
+// re-trigger the same link).
+//
+// Scope note: this only covers the top-level start-screen <-> in-app
+// transition, which is what was actually reported broken. It does NOT make
+// nested overlays (departure board, journey panel-over-map, station search,
+// alerts panel) individually back-button-dismissible — pressing back while
+// one of those is open will jump straight to the start screen along with
+// it, not close just the overlay first. That's a reasonable follow-up if
+// it turns out to bother people, but wasn't the reported problem and would
+// need each overlay to manage its own history entry, a fair bit more
+// surface area to get right.
+function wireBackButtonHandling() {
+  history.replaceState({ screen: 'start' }, '', location.pathname + location.search);
+  window.addEventListener('popstate', (e) => {
+    if (!e.state || e.state.screen === 'start') {
+      location.href = location.pathname;
+    }
+  });
+}
+
+function pushAppHistoryState(screen) {
+  history.pushState({ screen }, '', location.pathname + location.search);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   checkStorageAvailable();
   wireJourneyPanel();
   wireStartScreen();
   wireAlertsPanel();
   wireOfflineBanner();
+  wireBackButtonHandling();
   registerServiceWorker();
 
   // Trafikläge doesn't depend on which flow (map or journey) is chosen —
@@ -228,6 +271,7 @@ function wireStartScreen() {
 // what the loading overlay covers, since it's the slow part.
 async function startMapMode() {
   document.getElementById('start-screen').setAttribute('hidden', '');
+  pushAppHistoryState('map');
   document.getElementById('loading-overlay').removeAttribute('hidden');
   document.getElementById('titlebar').removeAttribute('hidden');
   document.getElementById('legend').removeAttribute('hidden');
@@ -285,6 +329,7 @@ function setLoadingProgress(percent, text) {
 // by typing, so there's nothing to preload and no loading overlay needed.
 function startJourneyMode() {
   document.getElementById('start-screen').setAttribute('hidden', '');
+  pushAppHistoryState('journey');
 
   const panel = document.getElementById('journey-panel');
   panel.classList.add('standalone', 'open');
@@ -637,7 +682,13 @@ function addStationMarker(site, mode) {
   }
   const icon = L.divIcon({ className: `station-marker station-${mode}`, iconSize: [12, 12], iconAnchor: [6, 6] });
   const marker = L.marker(latlng, { icon, keyboard: false })
-    .bindTooltip(site.name || 'Station', { direction: 'top', offset: [0, -6] });
+    // permanent:true here means "under our own imperative control" (via
+    // openTooltip()/closeTooltip() below), not "always visible" — it just
+    // opts out of Leaflet's own hover-based auto show/hide, which doesn't
+    // apply well on touch devices anyway (no hover). Starts closed; opened
+    // once zoomed in enough — see updateStationMarkerVisibility().
+    .bindTooltip(site.name || 'Station', { permanent: true, direction: 'top', offset: [0, -8], className: 'station-label' });
+  marker.closeTooltip();
 
   marker.on('click', () => openBoard(site));
   stationMarkers.set(site.id, { marker, mode, site });
@@ -654,6 +705,16 @@ function updateStationMarkerVisibility(marker, mode) {
   const isShown = map.hasLayer(marker);
   if (shouldShow && !isShown) marker.addTo(map);
   if (!shouldShow && isShown) map.removeLayer(marker);
+
+  // Station name labels only once zoomed in close enough that there's
+  // actually room for text without everything overlapping into an
+  // unreadable mess — addresses "have to click each dot to find the right
+  // one in a dense area" without permanently cluttering the city-wide view.
+  if (shouldShow && map.getZoom() >= STATION_LABEL_MIN_ZOOM) {
+    marker.openTooltip();
+  } else {
+    marker.closeTooltip();
+  }
 }
 
 function refreshAllStationVisibility() {
@@ -2071,6 +2132,15 @@ async function fetchSuggestions(query, list, which, input) {
   }
 }
 
+// Sums a trip's total walking distance across all its WALK/TRSF legs —
+// used by the "Minimera gång" option to re-rank results.
+function totalWalkingDistance(trip) {
+  const legs = (trip.LegList && trip.LegList.Leg) || [];
+  return legs
+    .filter(leg => leg.type === 'WALK' || leg.type === 'TRSF')
+    .reduce((sum, leg) => sum + (leg.dist || 0), 0);
+}
+
 async function searchTrips() {
   const results = document.getElementById('journey-results');
   if (!resrobotApiKey) {
@@ -2125,11 +2195,22 @@ async function searchTrips() {
 
     if (data.errorCode) throw new Error(`${data.errorCode}: ${data.errorText || ''}`);
 
-    const trips = data.Trip || [];
+    let trips = data.Trip || [];
     if (!trips.length) {
       results.innerHTML = '<p class="journey-status-msg">Inga resor hittades för den här sträckan.</p>';
       return;
     }
+
+    // "Minimera gång" — no confirmed ResRobot parameter for this (checked;
+    // couldn't find one documented), so this re-sorts the results we
+    // already got back by total walking distance instead of trusting
+    // ResRobot's own default ranking. An option, not the default — it can
+    // trade away a faster trip for one with less walking, which isn't
+    // always what someone wants.
+    if (document.getElementById('journey-minimize-walk').checked) {
+      trips = [...trips].sort((a, b) => totalWalkingDistance(a) - totalWalkingDistance(b));
+    }
+
     results.innerHTML = '';
     expandedTripCard = null;
 

@@ -227,6 +227,11 @@ body{
 .legend-row{display:flex;align-items:center;gap:8px;cursor:pointer;}
 .legend-row input[type="checkbox"]{accent-color:var(--amber);margin:0;}
 .legend-hint{color:var(--muted);font-size:10px;}
+#legend-map-link{
+  display:block;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);
+  color:var(--amber);text-decoration:none;font-size:12px;font-weight:600;
+}
+#legend-map-link:hover{text-decoration:underline;}
 .dot{width:9px;height:9px;border-radius:50%;flex:none;}
 .dot-pendeltag{background:var(--pendeltag);}
 .dot-roslagsbanan{background:var(--roslagsbanan);}
@@ -422,6 +427,14 @@ body{
 .station-bus{background:var(--bus);color:var(--bus);}
 .station-boat{background:var(--boat);color:var(--boat);}
 .station-marker:hover{filter:brightness(1.3);transform:scale(1.15);}
+.station-label{
+  background:var(--panel);color:var(--text);border:1px solid var(--border);
+  border-radius:6px;padding:2px 7px;font-size:11px;font-weight:600;
+  font-family:'Space Grotesk',system-ui,sans-serif;
+  box-shadow:0 2px 6px rgba(0,0,0,.15);
+  pointer-events:none; /* don't intercept clicks meant for the marker underneath */
+}
+.station-label::before{border-top-color:var(--panel)!important;} /* Leaflet's tooltip arrow, matches panel bg */
 
 .leaflet-popup-content-wrapper{
   background:var(--panel);color:var(--text);border:1px solid var(--border);
@@ -450,11 +463,12 @@ body{
 }
 #board-station-name{font-size:19px;margin:0;font-weight:600;}
 #board-header-actions{display:flex;align-items:center;gap:6px;flex:none;}
-#board-share,#board-save{
+#board-map-link,#board-share,#board-save{
   background:none;border:1px solid var(--border);color:var(--muted);
   border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:13px;
+  display:flex;align-items:center;justify-content:center;text-decoration:none;
 }
-#board-share:hover{color:var(--text);border-color:var(--muted);}
+#board-map-link:hover,#board-share:hover{color:var(--text);border-color:var(--muted);}
 #board-save:hover{color:var(--amber);border-color:var(--amber);}
 #board-save.saved{color:var(--amber);border-color:var(--amber);}
 #board-close{
@@ -594,6 +608,11 @@ body{
 #journey-swap:hover{color:var(--amber);border-color:var(--amber);}
 
 .journey-time-field{margin-top:2px;}
+.journey-checkbox-row{
+  display:flex;align-items:center;gap:8px;margin-top:4px;
+  font-size:12px;color:var(--muted);cursor:pointer;
+}
+.journey-checkbox-row input{flex:none;}
 .journey-time-row{display:flex;gap:6px;}
 .journey-time-row select,.journey-time-row input{
   background:var(--panel-2);border:1px solid var(--border);color:var(--text);
